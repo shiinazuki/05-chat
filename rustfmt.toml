@@ -1,0 +1,31 @@
+# rustfmt 配置。带 unstable 标记的选项只有 nightly 的 rustfmt 认，
+# 因此格式化统一走 `just fmt`。
+
+# 格式化风格的版本
+style_edition = "2024"
+edition = "2024"
+
+max_width = 100
+comment_width = 100 # unstable：注释的折行宽度
+newline_style = "Unix"
+
+# --- 注释与文档 ---------------------------------------------------------
+wrap_comments = true # unstable：超长注释自动折行
+format_code_in_doc_comments = true # unstable：格式化文档注释里的示例代码
+doc_comment_code_block_width = 90 # unstable
+normalize_doc_attributes = true # unstable：#[doc = "..."] 归一成 /// 形式
+
+# --- 字符串与字面量 -----------------------------------------------------
+format_strings = true # unstable：超长字符串自动折行
+hex_literal_case = "Upper" # stable：0xFF 而不是 0xff
+# unstable（#6471）：字面量小数尾零归一化，取值 Preserve / Always / IfNoPostfix / Never
+# float_literal_trailing_zero = "Always"
+
+# --- import 组织 --------------------------------------------------------
+imports_granularity = "Crate" # unstable：同一 crate 的 use 合并成一行
+group_imports = "StdExternalCrate" # unstable：std / 第三方 / 本 crate 分三组
+
+# --- 其它 ---------------------------------------------------------------
+use_field_init_shorthand = true # Foo { x } 而不是 Foo { x: x }
+use_try_shorthand = true # ? 而不是 try!
+reorder_impl_items = true # unstable：impl 块内 type / const 排到 fn 前面

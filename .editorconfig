@@ -1,0 +1,32 @@
+# https://editorconfig.org
+# 统一不同编辑器 / IDE 的基础排版（.rs 的排版由 rustfmt 负责）
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+max_line_length = 100
+
+[*.rs]
+indent_size = 4
+
+[*.{toml,yaml,yml,json,md}]
+indent_size = 2
+
+[*.md]
+# Markdown 里行尾两个空格是强制换行，不能删
+trim_trailing_whitespace = false
+
+# justfile 本体与被 import 的 docker.just / template.just，两条都要写
+[justfile]
+indent_size = 4
+
+[*.just]
+indent_size = 4
+
+[Makefile]
+indent_style = tab

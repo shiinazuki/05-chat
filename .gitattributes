@@ -1,0 +1,28 @@
+# 统一入库时的换行与差异呈现。
+
+# 默认：文本文件自动识别，入库一律 LF
+* text=auto eol=lf
+
+# 明确的二进制类型，不做换行转换，也不做行级 diff
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.pdf  binary
+*.woff  binary
+*.woff2 binary
+*.ttf  binary
+*.otf  binary
+*.zip  binary
+*.gz   binary
+*.wasm binary
+
+# 机器生成的文件：linguist-generated 让 GitHub 的 PR 页面默认折叠它们。
+# 不加 `-diff`，保证 `git diff Cargo.lock` 仍逐行可读。
+Cargo.lock   linguist-generated=true
+CHANGELOG.md linguist-generated=true
+
+# 让 `git diff` 的 hunk 头显示所在的 fn / impl
+*.rs diff=rust

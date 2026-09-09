@@ -1,0 +1,40 @@
+/target
+/dist
+**/*.rs.bk
+*.pdb
+
+# rustc 内部错误（ICE）的转储文件，落在当前工作目录而不是 target/ 下
+rustc-ice-*.txt
+
+# 覆盖率 / 测试报告产物
+/coverage
+lcov.info
+junit.xml
+*.profraw
+*.profdata
+
+# 性能分析产物
+flamegraph.svg
+perf.data*
+profile.json
+
+# 本地环境变量，但放行可以入库的 .env.example
+.env
+.env.*
+!.env.example
+
+# 合并冲突残留
+*.orig
+*.rej
+
+# 本地用 gitlab-runner 跑流水线时留下的 CARGO_HOME
+/.cargo-home
+
+# 编辑器 / 操作系统的本地文件
+.DS_Store
+.idea/
+.vscode/
+.zed/
+*.swp
+*~
+*.log

@@ -1,0 +1,33 @@
+# typos 拼写检查配置：https://github.com/crate-ci/typos
+# 本地：typos                    查看问题
+#       typos --write-changes    自动修正
+
+[default]
+# 打开后英式拼写（Colour / Behaviour 等）也会被判错，默认不设
+# locale = "en-us"
+
+# 匹配到这些正则的内容不做拼写检查
+extend-ignore-re = [
+  # 24 个字符以上的 base64 / hex / 密钥 / 哈希
+  "[A-Za-z0-9+/=_-]{24,}",
+  # 行尾加 `// spellchecker:disable-line` 单独跳过某一行
+  "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$",
+]
+
+# 专有名词、缩写、人名的放行名单。
+# 格式为 "被识别成拼写错误的词" = "希望替换成的词"，两边写成一样即表示放行。
+[default.extend-words]
+# ba = "ba"
+
+[files]
+extend-exclude = [
+  "CHANGELOG.md", # 由 git-cliff 生成
+  "Cargo.lock",
+  "target/",
+  "vendors/",
+  "*.svg",
+  "*.lock",
+  # 测试夹具 / 第三方数据文件按需追加，例如：
+  # "fixtures/",
+  # "assets/",
+]

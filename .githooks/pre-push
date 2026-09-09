@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# 推送前跑一遍 CI 的主要检查（just ci = lint + test + audit）。
+#
+# 安装：just hooks        临时跳过：git push --no-verify
+set -euo pipefail
+
+# 模板仓库自身跑不了 cargo，直接放行。
+# 本文件不做 liquid 变量替换，下面这个占位符必须原样保留。
+if grep -qF '{{ project-name }}' Cargo.toml 2>/dev/null; then
+    exit 0
+fi
+
+if ! command -v just >/dev/null 2>&1; then
+    echo "未安装 just，跳过 pre-push 检查（cargo binstall just）" >&2
+    exit 0
+fi
+
+just ci

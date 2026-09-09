@@ -1,0 +1,33 @@
+// Dev Container：一键还原开发环境（VS Code Dev Containers / GitHub Codespaces）。
+// 说明见 https://containers.dev/
+{
+  "name": "chat",
+  // 官方 Rust 镜像，自带 rustup / cargo / git / 常用编译依赖；
+  // trixie = Debian 13，与 Dockerfile / .gitlab-ci.yml 的基础镜像同一个大版本。
+  "image": "mcr.microsoft.com/devcontainers/rust:1-trixie",
+
+  "features": {
+    // just 是本项目的命令入口
+    "ghcr.io/guiyomh/features/just:0": {}
+  },
+
+  // 容器建好后跑一次：按 rust-toolchain.toml 装工具链，再用 binstall 装配套 cargo 工具
+  "postCreateCommand": "rustup show active-toolchain || rustup toolchain install && cargo install cargo-binstall && just install-tools",
+
+  "customizations": {
+    "vscode": {
+      // 只作用于容器 / Codespaces 里的 VS Code，仓库根目录不放 .vscode/
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "vadimcn.vscode-lldb",
+        "usernamehw.errorlens",
+        "fill-labs.dependi",
+        "skellock.just"
+      ]
+    }
+  },
+
+  // 容器内不用 root 干活
+  "remoteUser": "vscode"
+}

@@ -1,0 +1,124 @@
+# cargo 的项目级配置：https://doc.rust-lang.org/cargo/reference/config.html
+# 只放团队共用的设置，个人偏好写进 ~/.cargo/config.toml。
+#
+# 生效优先级（高 → 低）：
+#   环境变量（RUSTFLAGS / CARGO_*） > 本文件 > ~/.cargo/config.toml > cargo 内置默认值
+#
+# 环境变量里的 `RUSTFLAGS` 会整体替换下面 `[build] rustflags` / `[target.*] rustflags`。
+# 在这里启用 rustflags 时，要同步项目里显式设了 RUSTFLAGS 的地方（搜 `RUSTFLAGS=`）。
+
+[net]
+# 网络请求的重试次数
+retry = 5
+
+# 走系统 git 而不是内置的 libgit2，私有 git 依赖需要 SSH 凭据或代理时打开
+# git-fetch-with-cli = true
+
+# ---------------------------------------------------------------------------
+# 依赖解析
+# ---------------------------------------------------------------------------
+[resolver]
+# 解析依赖版本时，怎么对待「要求的 rustc 比本项目 rust-version 更新」的版本：
+#   allow     一视同仁
+#   fallback  没有别的版本可选时才用它
+#
+# 与 Cargo.toml 的 resolver = "3" 作用域不同：那个绑在 workspace 上，这一行绑在目录上。
+# fallback 下依赖抬高 rust-version 后会静默退回旧版本，靠 `just audit` 发现。
+incompatible-rust-versions = "fallback"
+
+# 把 Cargo.lock 放到别处，路径必须以 Cargo.lock 结尾（需要 cargo 1.97+）
+# lockfile-path = "Cargo.lock"
+
+# ---------------------------------------------------------------------------
+# 其它已稳定但默认没开的 cargo 配置项
+#
+# 下面出现了多个 `[build]` 段，同一个表在 TOML 里只能出现一次：
+# 要同时启用多项就合并到一个 [build] 段里。
+# ---------------------------------------------------------------------------
+
+# [build]
+# # cargo 1.97 稳定。把本地包的编译警告升级成错误："warn"(默认) / "allow" / "deny"。
+# # 它不走 RUSTFLAGS，因此换了 RUSTFLAGS 的命令也受它管。
+# # 只想在 CI 上生效的话，改在 CI 的 env 里设 `CARGO_BUILD_WARNINGS: deny`。
+# warnings = "deny"
+#
+# # cargo 1.91 稳定。把中间产物与最终产物分开存放，target/ 下只留最终产物。
+# # 支持 {workspace-root} / {cargo-cache-home} / {workspace-path-hash} 三个模板变量：
+# #   build-dir = "{cargo-cache-home}/build/{workspace-path-hash}"
+# # 改了它要同步 justfile 的 `just clean` 和 CI 里写死 target/ 的路径。
+# build-dir = "target"
+
+# 全局缓存的自动清理频率（cargo 1.88 起默认 "1 day" 检查一次）。
+# CI 上把 CARGO_HOME 放进缓存目录时设成 "never"，或用 CARGO_CACHE_AUTO_CLEAN_FREQUENCY=never。
+# [cache]
+# auto-clean-frequency = "never"
+
+# cargo 1.94 稳定。把配置拆成多份再合并，路径相对本文件解析，只接受 .toml 结尾：
+# include = [{ path = "cargo-local.toml", optional = true }]
+
+# 依赖里有「将来会变成硬错误」的用法时，提示 `cargo report future-incompatibilities`
+# [future-incompat-report]
+# frequency = "always"
+
+# cargo 1.96 起支持按 target 配 rustdocflags：
+# [target.'cfg(all())']
+# rustdocflags = ["-D", "warnings"]
+
+# cargo 1.87 起可以把编译进度报给终端模拟器（显示在任务栏 / 标签页上）
+# [term]
+# progress.term-integration = true
+
+# ---------------------------------------------------------------------------
+# 链接器
+#
+# 各平台的链接器现状：
+#   x86_64-unknown-linux-gnu   rustc 1.90 起默认 rust-lld，无需配置
+#                              （退回系统链接器：-Clinker-features=-lld）
+#   aarch64-unknown-linux-gnu  换 mold 或显式开 lld 有明显收益
+#   macOS                      Xcode 15 起的系统 ld 本身已经很快
+#   windows-msvc               默认 link.exe，换 rust-lld（lld-link）一般更快
+#
+# 启用下面任一段即等于给项目设了 rustflags，注意文件开头那条覆盖规则。
+# ---------------------------------------------------------------------------
+
+# [target.aarch64-unknown-linux-gnu]
+# # 需要先装 mold（apt install mold / brew install mold），CI 镜像里也得装
+# rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+# [target.x86_64-pc-windows-msvc]
+# rustflags = ["-C", "linker-features=+lld"]
+
+# ---------------------------------------------------------------------------
+# 并行前端（仅 nightly）
+#
+# `-Zthreads=N` 并行化 rustc 的解析、类型检查、借用检查，干净构建通常能省 20%~30%。
+# 打开后要同步那几处显式设了 RUSTFLAGS 的地方（见文件开头），线程数超过 8 基本没有额外收益。
+# ---------------------------------------------------------------------------
+
+# [build]
+# rustflags = ["-Z", "threads=8"]
+
+# ---------------------------------------------------------------------------
+# 其它按需打开的条目
+# ---------------------------------------------------------------------------
+
+# 用本机 CPU 的全部指令集编译，产物只能在同型号 CPU 上运行，别用于分发
+# [build]
+# rustflags = ["-C", "target-cpu=native"]
+
+# 把 crates.io 的稀疏索引换成镜像。三点注意：
+#   1. 只影响下载来源，不影响校验和，Cargo.lock 与 `--locked` 照常工作；
+#   2. `cargo publish` / `cargo owner` / `cargo yank` 要显式加 `--registry crates-io`；
+#   3. deny.toml 的 [sources] allow-registry 仍写官方地址。
+# [source.crates-io]
+# replace-with = "mirror"
+#
+# [source.mirror]
+# registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"
+
+# 给所有 cargo 子命令注入环境变量
+# [env]
+# # 只在这个项目里默认打开 backtrace
+# RUST_BACKTRACE = "1"
+# # relative = true 时按「相对于本文件所在目录」解析成绝对路径
+# FIXTURES_DIR = { value = "tests/fixtures", relative = true }

@@ -1,0 +1,409 @@
+name: build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch: # 允许在 Actions 页面手动触发
+
+# 本文件只负责 push / PR 上的持续检查，发布流程在 release.yaml 里。
+# 分开是为了让缓存只服务于 CI，发布流程从零构建。
+#
+# 同一分支/PR 连续推送时取消上一次尚未跑完的 run
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# 默认只给读权限，需要写的 job 在自己身上单独申明
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # CI 是一次性环境，关掉增量编译
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+
+jobs:
+  # 探测仓库里有哪些 target，供后面的 job 做条件判断。
+  #
+  # 单独开一个 job 是因为 job 级的 `if:` 在 checkout 之前求值，那时
+  # `hashFiles('src/lib.rs')` 恒为空串；先 checkout 再用 outputs 传结论才可靠。
+  # （步骤级的 `if: hashFiles(...)` 没有这个问题。）
+  detect:
+    name: detect targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      is_template: ${{ steps.probe.outputs.is_template }}
+      is_lib_only: ${{ steps.probe.outputs.is_lib_only }}
+      has_docker: ${{ steps.probe.outputs.has_docker }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Probe repository layout
+        id: probe
+        run: |
+          # 判断这里是不是模板仓库本身：模板仓库的 Cargo.toml 还是 liquid 占位符，
+          # 任何 cargo 命令都会失败，所以下面所有 cargo 相关的 job 都跳过。
+          # 模板自身的检查见 template-ci.yaml。
+          if grep -q '{%' Cargo.toml 2>/dev/null; then
+            is_template=true
+          else
+            is_template=false
+          fi
+          # 是 is_lib_only 而不是 is_lib：bin 项目也有 src/lib.rs，但那是内部库，
+          # 不对外承诺 API，不跑 semver 检查。
+          if [ -f src/lib.rs ] && [ ! -f src/main.rs ]; then
+            is_lib_only=true
+          else
+            is_lib_only=false
+          fi
+          has_docker=$([ -f Dockerfile ] && echo true || echo false)
+          {
+            echo "is_template=$is_template"
+            echo "is_lib_only=$is_lib_only"
+            echo "has_docker=$has_docker"
+          } >> "$GITHUB_OUTPUT"
+          echo "template=$is_template lib_only=$is_lib_only docker=$has_docker"
+          if [ "$is_template" = true ]; then
+            echo "::notice::检测到这是模板仓库本身（Cargo.toml 里还是 liquid 占位符），跳过所有 cargo 相关的 job。模板自身的检查见 template-ci.yaml。"
+          fi
+
+  # 格式化 / 拼写 / clippy / 文档：不跑测试，失败得最快
+  lint:
+    name: lint
+    needs: [detect]
+    if: needs.detect.outputs.is_template != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          # 后续步骤不需要推东西回仓库，不保留凭据
+          persist-credentials: false
+      - name: Install Rust (版本由 rust-toolchain.toml 固定)
+        run: rustup show active-toolchain || rustup toolchain install
+      # 规则同 justfile 的 fmt_toolchain
+      - name: Resolve rustfmt toolchain
+        run: |
+          channel=$(grep -m1 '^channel' rust-toolchain.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          case "$channel" in
+            nightly*)
+              fmt="$channel"
+              ;;
+            *)
+              fmt=nightly
+              rustup toolchain install nightly --allow-downgrade --profile minimal --component rustfmt
+              ;;
+          esac
+          echo "FMT_TOOLCHAIN=$fmt" >> "$GITHUB_ENV"
+      - name: Install cargo tools
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+        with:
+          tool: typos,taplo-cli
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Check code format
+        run: cargo "+$FMT_TOOLCHAIN" fmt --all -- --check
+      # rustfmt 不管 .toml，项目里的 TOML 排版由 taplo 保证，规则见 .taplo.toml
+      - name: Check TOML format
+        run: taplo fmt --check
+      - name: Check spelling
+        run: typos
+      - name: Lint rust sources
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - name: Check documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --locked --no-deps --all-features --document-private-items
+
+  # 测试 + 覆盖率
+  test:
+    name: test (${{ matrix.platform }})
+    needs: [detect]
+    if: needs.detect.outputs.is_template != 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ubuntu-latest]
+        # 默认只跑一个平台；代码碰了路径分隔符、换行、文件权限、进程 API 或 FFI 时，
+        # 把下面这行放开跑多平台。
+        # platform: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 30
+    # services:
+    #   postgres:
+    #     image: postgres:18
+    #     env:
+    #       POSTGRES_PASSWORD: postgres
+    #     ports:
+    #       - 5432:5432
+    #     options: >-
+    #       --health-cmd pg_isready
+    #       --health-interval 10s
+    #       --health-timeout 5s
+    #       --health-retries 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Install Rust (版本由 rust-toolchain.toml 固定)
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Install cargo tools
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+        with:
+          tool: cargo-nextest,cargo-llvm-cov
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # - name: Install Protoc
+      #   uses: arduino/setup-protoc@v3
+      # 这里没有单独的 `cargo check`：lint job 的 clippy 已是它的超集，
+      # 而下面的 llvm-cov 会带 `-C instrument-coverage` 重新编一遍。
+      # 只测 debug；要提前拦 release-only 的编译错误，补一条
+      # `cargo check --locked --release --all-targets --all-features`。
+      #
+      # 用 .config/nextest.toml 里的 ci profile：不 fail-fast、失败重试 2 次、输出 JUnit
+      - name: Execute rust tests with coverage
+        run: cargo llvm-cov nextest --locked --profile ci --all-features --lcov --output-path lcov.info
+      # nextest 不跑 doctest，有 lib target 时补一次。
+      # 这里的 hashFiles 是步骤级的，此刻已经 checkout 过，结果可信。
+      - name: Execute doc tests
+        if: hashFiles('src/lib.rs') != ''
+        run: cargo test --locked --doc --all-features
+      # 想给覆盖率设下限就在上一条命令里加 --fail-under-lines N（N 是百分比）
+      - name: Upload coverage report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-${{ matrix.platform }}
+          path: lcov.info
+          retention-days: 14
+      - name: Upload test results
+        if: always() # 测试失败时更需要这份报告
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: junit-${{ matrix.platform }}
+          path: target/nextest/ci/junit.xml
+          retention-days: 14
+          if-no-files-found: ignore
+      # 需要 codecov 的话打开这一步，并在仓库 Secrets 里配置 CODECOV_TOKEN
+      # - name: Upload coverage to Codecov
+      #   uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+      #   with:
+      #     files: lcov.info
+      #     token: ${{ secrets.CODECOV_TOKEN }}
+
+  # 依赖审计：不需要编译，和上面的 job 并行跑
+  deny:
+    name: cargo-deny
+    needs: [detect]
+    if: needs.detect.outputs.is_template != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+        with:
+          tool: cargo-deny
+      - name: Check dependencies (advisories / licenses / bans / sources)
+        run: cargo deny check -A unmatched-bypass
+
+  # workflow 文件自己的静态检查，两个工具互补：
+  #   zizmor      安全向——脚本注入、过宽权限、缓存投毒、可变 tag
+  #   actionlint  正确性向——表达式、job 依赖、runner 标签、run: 里的 shell 语法
+  workflows:
+    name: lint workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install zizmor
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+        with:
+          tool: zizmor
+      # actionlint 不在 install-action 的支持列表里（Go 写的，crates.io 上没有同名包），
+      # 这里自己取回官方预编译二进制、核对 sha256 再装。
+      # 版本要手工升级：dependabot 管不到 run: 里的版本号，
+      # 校验和取自 release 页的 actionlint_<版本>_checksums.txt。
+      - name: Install actionlint
+        env:
+          ACTIONLINT_VERSION: "1.7.12"
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) arch=amd64 sha=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8 ;;
+            aarch64) arch=arm64 sha=325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6 ;;
+            *) echo "actionlint 没有 $(uname -m) 的预编译包"; exit 1 ;;
+          esac
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_${arch}.tar.gz"
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$tarball" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${tarball}"
+          echo "$sha  $tarball" | sha256sum --check --strict -
+          tar -xzf "$tarball" actionlint
+          sudo install -m 0755 actionlint /usr/local/bin/actionlint
+          rm -f "$tarball" actionlint
+          actionlint --version
+      # --min-severity medium：低危项多是风格建议。想更严就去掉这个参数，
+      # 或加 --persona=pedantic。
+      - name: Audit GitHub Actions workflows
+        run: zizmor --min-severity medium --no-progress .github/workflows
+      - name: Lint GitHub Actions workflows
+        run: actionlint -color
+
+  # 按 rust-toolchain.toml 的 channel 分两条路，判断依据在 job 内部读文件：
+  #   stable  → 用 Cargo.toml 里 rust-version 声明的那个版本 check 一遍
+  #   nightly → MSRV 检查不适用，改用 `-Zpolonius=off` 把借用检查器换回 stable 的 NLL，
+  #             拦下只有 nightly 编得过的代码
+  msrv:
+    name: msrv / nll
+    needs: [detect]
+    if: needs.detect.outputs.is_template != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Decide what to check
+        id: msrv
+        run: |
+          channel=$(grep -m1 '^channel' rust-toolchain.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          version=$(grep -m1 '^rust-version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ "${channel#nightly}" != "$channel" ]; then
+            mode=nll
+            echo "工具链是 ${channel}：MSRV 检查不适用，改跑 NLL 兜底检查"
+          elif [ -z "$version" ]; then
+            mode=skip
+            echo "Cargo.toml 里没有 rust-version，跳过 MSRV 检查"
+          else
+            mode=msrv
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            echo "MSRV = $version"
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+      # 用 env 把 step 输出接进来，而不是把 ${{ ... }} 直接拼进 run:（防脚本注入）
+      - name: Install Rust toolchain
+        if: steps.msrv.outputs.mode == 'msrv'
+        env:
+          MSRV: ${{ steps.msrv.outputs.version }}
+        run: rustup toolchain install "$MSRV" --profile minimal
+      - name: Install Rust (版本由 rust-toolchain.toml 固定)
+        if: steps.msrv.outputs.mode == 'nll'
+        run: rustup show active-toolchain || rustup toolchain install
+      # key 带上 mode：两条路的工具链与 RUSTFLAGS 不同，编译产物互不通用
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.msrv.outputs.mode != 'skip'
+        with:
+          key: ${{ steps.msrv.outputs.mode }}
+      - name: Check with MSRV toolchain
+        if: steps.msrv.outputs.mode == 'msrv'
+        env:
+          MSRV: ${{ steps.msrv.outputs.version }}
+        run: cargo "+$MSRV" check --locked --all-targets --all-features
+      # 本地等价命令：`just nll`
+      - name: Check with the stable borrow checker (NLL)
+        if: steps.msrv.outputs.mode == 'nll'
+        env:
+          RUSTFLAGS: -Zpolonius=off
+        run: cargo check --locked --all-targets --all-features
+
+  # 特性组合检查：把 [features] 的幂集逐个 check 一遍，
+  # 覆盖「只开某一个 feature 编不过」这类问题。没声明 feature 时相当于一次普通 check。
+  hack:
+    name: feature powerset
+    needs: [detect]
+    if: needs.detect.outputs.is_template != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Install Rust (版本由 rust-toolchain.toml 固定)
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+        with:
+          tool: cargo-hack
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # --depth 2 限制组合爆炸。
+      # 这里不能加 --locked：--no-dev-deps 会临时删掉 [dev-dependencies]，
+      # 依赖图一变 cargo 就要改 Cargo.lock，而 --locked 禁止改动，直接 101 退出。
+      # 「lock 是最新的」由 lint / test / msrv 那几个 job 的 --locked 保证。
+      - name: Check feature powerset
+        run: cargo hack --feature-powerset --depth 2 --no-dev-deps check
+
+  # 公开 API 的破坏性变更检查（只对纯库项目跑，判断见 detect job）。
+  # 以上一个 v* tag 为基线，指出该抬 minor 还是 major；没有 tag 时自动跳过。
+  semver:
+    name: semver-checks
+    needs: [detect]
+    if: needs.detect.outputs.is_template != 'true' && needs.detect.outputs.is_lib_only == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # 需要完整历史才能找到上一个 tag
+          persist-credentials: false
+      - name: Install Rust (版本由 rust-toolchain.toml 固定)
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Find baseline tag
+        id: baseline
+        run: |
+          if tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null); then
+            echo "rev=$tag" >> "$GITHUB_OUTPUT"
+            echo "基线版本：$tag"
+          else
+            echo "rev=" >> "$GITHUB_OUTPUT"
+            echo "仓库还没有 v* tag，跳过 semver 检查"
+          fi
+      - name: Install cargo-semver-checks
+        if: steps.baseline.outputs.rev != ''
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+        with:
+          tool: cargo-semver-checks
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.baseline.outputs.rev != ''
+      - name: Check for API breakage
+        if: steps.baseline.outputs.rev != ''
+        env:
+          BASELINE: ${{ steps.baseline.outputs.rev }}
+        run: cargo semver-checks --baseline-rev "$BASELINE"
+
+  # 容器镜像构建验证（只在生成项目时选了 Docker 才有这个 job）：只构建、不推送，
+  # 用来发现 Dockerfile 什么时候坏掉。
+  # CI 上 BuildKit 的 cache mount 恒为空，每次都从零编译依赖；提速方案见 Dockerfile 顶部。
+  docker:
+    name: docker build
+    needs: [detect]
+    if: needs.detect.outputs.is_template != 'true' && needs.detect.outputs.has_docker == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      # 走 env 而不是把 ${{ }} 直接拼进 run，理由同 msrv job
+      - name: Build image
+        env:
+          DOCKER_BUILDKIT: "1"
+          REVISION: ${{ github.sha }}
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          docker build \
+            --build-arg VERSION="$version" \
+            --build-arg REVISION="$REVISION" \
+            -t ci-build-check:latest \
+            .

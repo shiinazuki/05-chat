@@ -1,0 +1,245 @@
+# cargo-deny 配置：依赖的安全公告、License 合规、重复版本与来源审计。
+#   本地：just audit   /   CI：cargo deny check
+#
+# 完整字段说明见 https://embarkstudios.github.io/cargo-deny/
+
+# ---------------------------------------------------------------------------
+# 依赖图的构建方式
+# ---------------------------------------------------------------------------
+[graph]
+# 要检查的目标平台，留空表示检查所有平台
+targets = [
+  # "x86_64-unknown-linux-gnu",
+  # "aarch64-unknown-linux-gnu",
+  # "aarch64-apple-darwin",
+  # "x86_64-pc-windows-msvc",
+]
+all-features = false
+no-default-features = false
+# 设为 true 则不检查 dev-dependencies（测试 / benchmark）那棵依赖树
+exclude-dev = false
+
+[output]
+feature-depth = 1
+
+# ---------------------------------------------------------------------------
+# 安全公告（RustSec advisory-db）
+# ---------------------------------------------------------------------------
+[advisories]
+# 忽略特定公告，逐条写明 reason
+ignore = [
+  # { id = "RUSTSEC-0000-0000", reason = "只在 windows 上触发，本项目不支持 windows" },
+  # { crate = "some-crate@0.1.1", reason = "上游还没发新版，已确认不走到受影响的代码路径" },
+]
+
+# 依赖被标记为「无人维护」时的处理级别：
+#   all        - 所有依赖（含间接依赖）
+#   workspace  - 只管本 workspace 的直接依赖
+#   transitive - 只管间接依赖
+#   none       - 关闭检查
+unmaintained = "workspace"
+
+# 依赖被标记为「不健全」（unsound）时的处理级别，取值同上
+unsound = "workspace"
+
+# 用到已被 yank 的版本时判失败
+yanked = "deny"
+
+# ignore 列表里的公告已不在依赖图中时给出提醒
+unused-ignored-advisory = "warn"
+
+# 公告库允许的最大陈旧程度，只在关闭了公告库拉取（--offline / --frozen）时生效
+maximum-db-staleness = "P7D"
+
+# cargo-deny 0.19.1 起调用系统 `git` 拉取公告库，运行环境必须装有 git。
+# 设成 true 可强制走系统 git（私有代理 / 自签证书环境下有用）。
+# git-fetch-with-cli = false
+
+# ---------------------------------------------------------------------------
+# License 合规
+# ---------------------------------------------------------------------------
+[licenses]
+# 允许的 License（SPDX 标识符，见 https://spdx.org/licenses/）：
+# 一份对商业使用友好的宽松许可清单，不含 GPL / AGPL 这类传染性协议。
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "MPL-2.0",
+  "BSL-1.0",
+  "CC0-1.0",
+  "CDLA-Permissive-2.0",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "Unlicense",
+  # SPDX 里的 License 名，ring（rustls 的默认后端）的许可表达式里带这一项
+  "OpenSSL",
+]
+
+# 从 License 文本反推类型时的相似度阈值（上游默认 0.8）
+confidence-threshold = 0.8
+
+# allow 里列了却没被用到的 License 不报 warning
+unused-allowed-license = "allow"
+# 同上，针对下面的 exceptions 列表
+unused-license-exception = "allow"
+
+# build-dependencies 也纳入 License 检查
+include-build = true
+
+# 只对单个 crate 放行的 License
+exceptions = [
+  # { allow = ["GPL-3.0"], crate = "some-gpl-crate" },
+]
+
+# 手工澄清机器读不出 License 信息的 crate
+# [[licenses.clarify]]
+# crate = "ring"
+# expression = "MIT AND ISC AND OpenSSL"
+# license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
+
+[licenses.private]
+# 本 workspace 里不发布的 crate（publish = false）是否跳过 License 检查
+ignore = false
+registries = []
+
+# ---------------------------------------------------------------------------
+# 依赖版本与特性禁令
+# ---------------------------------------------------------------------------
+[bans]
+# 同一个 crate 出现多个版本时只警告；改成 "deny" 后用下面的 skip / skip-tree 逐个豁免
+multiple-versions = "warn"
+
+# 禁止 version = "*" 这种没有上界的依赖声明
+wildcards = "deny"
+# path / git 依赖写 "*" 属正常写法，放行
+allow-wildcard-paths = true
+
+# 导出 dotgraph（`cargo deny check bans -g <dir>`）时，重复版本的依赖路径怎么上色
+highlight = "simplest-path"
+workspace-default-features = "allow"
+external-default-features = "allow"
+
+# 重复版本检查不把 dev-dependencies 算进来
+multiple-versions-include-dev = false
+
+# 白名单：非空时只有列出的 crate 允许出现在依赖图里
+allow = []
+# allow 是否自动包含 workspace 成员
+allow-workspace = false
+
+# 明确禁止的 crate
+deny = [
+  # { crate = "openssl", reason = "统一用 rustls，不引入 C 依赖" },
+  # 也可以只在被某个 crate 依赖时放行：
+  # { crate = "ansi_term@0.11.0", wrappers = ["clap"] },
+]
+
+# 重复版本检查的豁免名单
+skip = [
+  # { crate = "windows-sys@0.52", reason = "上游依赖还没跟上" },
+]
+# 与 skip 类似，但连同整棵子依赖树一起跳过
+skip-tree = [
+  # { crate = "some-crate@1.0", depth = 20 },
+]
+
+# 约束 workspace 成员声明依赖的方式（版本统一在 [workspace.dependencies] 定，
+# 成员只写 `foo = { workspace = true }`），拆出子 crate 后才真正起作用。
+[bans.workspace-dependencies]
+# 同一个直接依赖被多个成员各自声明版本时报错
+duplicates = "deny"
+# path 依赖不参与上面的重复检查
+include-path-dependencies = false
+# [workspace.dependencies] 里声明了却没人用时只警告，布局稳定后可改成 deny
+unused = "warn"
+
+# 扫描编译期执行的代码（build script 与 proc-macro）里夹带的可执行文件 / 脚本。
+# 整段不写则这项检查不跑。
+[bans.build]
+# 依赖里夹带的原生可执行文件（ELF / PE / Mach-O），按文件头判断
+executables = "deny"
+# 带 shebang 的解释型脚本，同样按文件头判断
+interpreted = "deny"
+# 按扩展名扫 *.sh / *.py / *.ps1 等，默认关闭
+enable-builtin-globs = false
+# script-extensions = ["cs"]
+# 只扫编译期执行的那个 crate 本身，不下钻它的依赖树
+include-dependencies = false
+# 不扫本 workspace 自己的代码
+include-workspace = false
+# .lib / .a / .o 这类归档不算作原生代码
+include-archives = false
+
+# 预置的放行项：这几个 crate 自带 build.rs 因而必被扫到，包里又躺着上游留下的
+# CI / 测试脚本。放行的是列出的这几个文件，它们的 build.rs 照常受检。
+#
+#   libc              etc/libc-util.py        维护者生成/比对 FFI 声明用
+#   blake3            .github/workflows/*.py  发版脚本；c/test.py 测 C 实现
+#   curve25519-dalek  tests/build_tests.sh    检查各 feature 组合能否编过
+#
+# 项目没用到其中某个依赖时会报 `warning[unmatched-bypass]`，所以每个
+# `cargo deny check` 调用点都带上 `-A unmatched-bypass`。
+[[bans.build.bypass]]
+name = "libc"
+allow-globs = ["etc/*.py"]
+
+[[bans.build.bypass]]
+name = "blake3"
+allow-globs = [".github/workflows/*.py", "c/test.py"]
+
+[[bans.build.bypass]]
+name = "curve25519-dalek"
+allow-globs = ["tests/build_tests.sh"]
+
+# 撞上别的误报时在这里逐个放行：
+# [[bans.build.bypass]]
+# name = "some-crate"
+# build-script = "<build.rs 的 sha256>"   # 内容一变校验和就对不上，会重新报警
+# allow-globs = ["scripts/*.py"]
+# allow = [{ path = "bin/x86_64-linux", checksum = "<sha256>" }]
+
+# 找出已经被 std / core 吸收掉的 crates.io 依赖（如 lazy_static -> LazyLock）。
+# 整段不写则这项检查跳过。
+[bans.std-replacements]
+# 只看本 workspace 的直接依赖
+scope = "workspace"
+level = "deny"
+# 给没声明 rust-version 的 crate 用的兜底版本，打开时要与 Cargo.toml 的 rust-version 一致
+# rust-version = "1.94"
+
+# 按 crate 禁用具体 feature
+# [[bans.features]]
+# name = "some-crate"
+# version = "1.0"
+# deny = ["openssl"]
+# allow = ["rustls"]
+# exact = false
+# reason = "统一走 rustls，不引入 C 依赖"
+
+# ---------------------------------------------------------------------------
+# 依赖来源
+# ---------------------------------------------------------------------------
+[sources]
+# 来自未知 registry / git 仓库的依赖直接判失败，
+# 确需引入时把地址加到下面的 allow-git / allow-org 里。
+unknown-registry = "deny"
+unknown-git = "deny"
+
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = [
+  # "https://github.com/some-org/some-crate",
+]
+
+# allow-org 里列了却没被用到的组织不报 warning
+unused-allowed-org = "allow"
+
+[sources.allow-org]
+# 整个组织下的 git 依赖都放行
+github = []
+gitlab = []
+bitbucket = []

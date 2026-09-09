@@ -1,0 +1,14 @@
+# taplo 的 TOML 格式化配置：https://taplo.tamasfe.dev/configuration/formatter-options.html
+#   格式化：just fmt
+#   只检查：just lint
+#
+# VSCode 的 even-better-toml 保存时也读这份配置。
+
+# 排除不需要格式化的目录（taplo 默认已尊重 .gitignore）
+exclude = ["target/**"]
+
+[formatting]
+# 关掉行尾注释与键值的列对齐：CJK 宽度算法不一致会产生反复的无意义 diff
+align_comments = false
+align_entries = false
+column_width = 100

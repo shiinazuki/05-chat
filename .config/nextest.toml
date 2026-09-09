@@ -1,0 +1,98 @@
+# cargo-nextest 配置：https://nexte.st/docs/configuration/
+#   本地：just test        （default profile）
+#   CI  ：cargo nextest run --profile ci
+
+# 声明本文件需要的最低 nextest 版本，低于它会给出明确的 REQUIRED_VERSION_NOT_MET（退出码 92）。
+#   required    低于它直接失败（对应 flaky-result / junit.flaky-fail-status）
+#   recommended 低于它只警告（对应 junit.report-skipped）
+# 临时绕过：cargo nextest run --override-version-check
+nextest-version = { required = "0.9.131", recommended = "0.9.143" }
+
+[store]
+dir = "target/nextest"
+
+[profile.default]
+# `cargo nextest run` 默认跑哪些测试，可按 profile 分别过滤，例如：
+#   default-filter = "not test(/^slow_/)"
+# 语法见 https://nexte.st/docs/filtersets/（nextest 0.9.77+）
+default-filter = "all()"
+# 本地跑测试不重试
+retries = 0
+# 一个失败就停下来
+fail-fast = true
+failure-output = "immediate"
+final-status-level = "flaky"
+# 超过 30s 的测试标记为 slow；连续 4 个周期（2 分钟）还没结束就判定卡死并杀掉
+slow-timeout = { period = "30s", terminate-after = 4 }
+# 整轮测试的总闸（nextest 0.9.100+），默认 30 年即等于没有
+# global-timeout = "30y"
+
+# benchmark 的超时，`cargo nextest bench` 用的是这两项而不是上面的 slow-timeout / global-timeout。
+# 默认都是 30 年：
+# bench.slow-timeout = { period = "5m" }
+# bench.global-timeout = "30m"
+
+# CI 专用 profile：`cargo nextest run --profile ci`
+#
+# 自定义 profile 默认继承 default，这里只写与 default 不同的项。
+# 想改从别的 profile 继承，写 `inherits = "<profile>"`（nextest 0.9.115+）。
+[profile.ci]
+# 用少量重试吸收 CI 上的偶发抖动，重试后通过的测试标记为 flaky 并单独列出
+retries = { backoff = "exponential", count = 2, delay = "1s", jitter = true }
+# 重试后通过的测试算不算通过（nextest 0.9.131+）："pass" 算通过但标记 flaky，"fail" 判失败
+flaky-result = "pass"
+# 一次跑完，看到全部失败
+fail-fast = false
+failure-output = "immediate-final"
+status-level = "retry"
+slow-timeout = { period = "60s", terminate-after = 3 }
+# 整轮测试的总闸，设得比 CI job 的 timeout-minutes 小一截，让 nextest 先超时并正常收尾
+global-timeout = "20m"
+
+# 输出 JUnit 报告，供 CI 的测试报告插件消费
+[profile.ci.junit]
+path = "junit.xml"
+# 报告里带上失败测试的 stdout/stderr
+store-failure-output = true
+# 成功的不带，控制报告体积
+store-success-output = false
+# 跳过的测试写不写进报告：none（默认）/ ignored（只写 #[ignore] 那批）/ all。
+# 需要 nextest 0.9.143+，打开时把上面的 required 一并抬上去；
+# 用 --partition 分片跑时不要用 "all"。
+# report-skipped = "ignored"
+# flaky 但最终仍失败的测试在报告里怎么记（nextest 0.9.131+）：
+# failure（默认，同时写 <failure> 和 <flakyFailure>）/ success
+flaky-fail-status = "failure"
+
+# ---------------------------------------------------------------------------
+# 测试分组：给共享资源（数据库、固定端口、同一个文件）的测试限制并发。
+# 声明一个并发上限为 1 的组，再按名字把相关测试划进去，取消注释即可用。
+# ---------------------------------------------------------------------------
+
+# [test-groups.serial]
+# max-threads = 1
+
+# [[profile.default.overrides]]
+# # 过滤表达式语法见 https://nexte.st/docs/filtersets/
+# filter = 'test(/^db::/)'
+# test-group = 'serial'
+
+# 单独给个别慢测试放宽超时，而不动全局 slow-timeout
+# [[profile.default.overrides]]
+# filter = 'test(integration)'
+# slow-timeout = { period = "120s", terminate-after = 2 }
+
+# ---------------------------------------------------------------------------
+# 本文件没用到的两块能力：
+#
+#   [scripts.setup] + [[profile.default.scripts]]
+#       跑测试前执行命令（起容器、跑 migration、生成夹具），可按过滤表达式生效。
+#       https://nexte.st/docs/configuration/setup-scripts/
+#
+#   [scripts.wrapper]
+#       给测试进程套一层外壳（valgrind、strace、自定义 runner）。
+#       https://nexte.st/docs/configuration/wrapper-scripts/
+#
+# 另外 [profile.*] 下的 archive.include 把测试要读的非标准文件一并打进
+# `cargo nextest archive`。
+# ---------------------------------------------------------------------------

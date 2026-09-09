@@ -1,0 +1,37 @@
+# 固定构建 / 测试 / clippy 使用的工具链版本，进入本目录时 rustup 自动安装并切换。
+# 它优先于 rustup 的全局默认工具链（`rustup default`）。
+#
+# channel 可选：
+#   "stable"             跟随最新 stable（模板默认）
+#   "nightly"            滚动更新的最新 nightly，可用 #![feature(...)]
+#   "nightly-2026-08-01" 钉死到某一天的 nightly，撞上编译器 ICE 时往前退几天（见 `just ice`）
+#   "1.94.0"             锁死到某个具体版本
+#
+# 用 nightly 时，`just nll` / CI 的 msrv job 会换回 stable 的 NLL 借用检查器
+# （`-Zpolonius=off`）复验一遍，防止写出只有 Polonius 才接受的代码。
+[toolchain]
+channel = "stable"
+# profile = "minimal" 只装 rustc / cargo / rust-std，其余组件在这里点名：
+#   rustfmt / clippy      格式化与 lint
+#   rust-src              rust-analyzer 解析标准库
+#   llvm-tools-preview    cargo-llvm-cov 生成覆盖率（`rustup component list` 里显示为 llvm-tools）
+components = ["rustfmt", "clippy", "rust-src", "llvm-tools-preview"]
+profile = "minimal"
+
+# 可选组件，按需加进上面的 components：
+#   rust-analyzer   rustup 分发的 LSP 服务端，用于让 LSP 版本与工具链严格对齐
+#   miri            检测未定义行为，跑 `cargo +nightly miri test`（仅 nightly）
+#   rustc-dev       编写 clippy / rustc 插件时需要
+
+# 交叉编译目标，留空表示只装当前平台；点名后 rustup 会连同标准库一起装好：
+# targets = ["x86_64-unknown-linux-musl", "aarch64-apple-darwin"]
+
+# 格式化用的工具链从上面的 channel 推导，不写死 `+nightly`：
+#   channel = "nightly" / "nightly-<日期>"   -> 用这条工具链自身
+#   channel = "stable" / "1.85.0"            -> 退回 nightly，需另装一份 nightly 的 rustfmt
+#       rustup toolchain install nightly --allow-downgrade --profile minimal --component rustfmt
+#     （`just install-tools` 会装，`just doctor` 会检查）
+#
+# 三处实现规则一致：justfile 顶部的 `fmt_toolchain` 变量、
+# .github/workflows/{build,release}.yaml 的 "Resolve rustfmt toolchain" 步骤、
+# .gitlab-ci.yml 的 lint job。

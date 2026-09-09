@@ -1,0 +1,40 @@
+# 依赖自动升级：https://docs.github.com/code-security/dependabot
+version: 2
+
+updates:
+  # Rust 依赖
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      # 与 conventional commits 对齐，cliff.toml 会把 chore(deps) 从 CHANGELOG 中过滤掉
+      prefix: "chore"
+      include: scope
+    groups:
+      # 补丁 / 小版本升级合并成一个 PR
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # GitHub Actions 自身的版本。
+  # workflow 里的 action 全部用 commit hash 钉死，这条规则每周把 hash 连同后面的
+  # `# vX.Y.Z` 注释一起更新。
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "ci"
+      include: scope
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  # 容器基础镜像那一段，只有生成了 Dockerfile 的项目才有，
+  # 否则 dependabot 每周会报一次 dependency_file_not_found。

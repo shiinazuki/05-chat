@@ -1,0 +1,256 @@
+# 生成的项目自成一个 workspace root，不会被外层 workspace 接管。
+[workspace]
+# 拆分出子 crate（如 crates/core、crates/cli）时在这里登记，
+# 它们即可继承下面的 [workspace.package] / [workspace.dependencies] / [workspace.lints]。
+members = []
+resolver = "3"
+
+# --- 供所有成员继承的公共元数据 -------------------------------------------
+# 子 crate 写 `version.workspace = true` 之类即可继承。
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+# MSRV（最低支持版本）：低于它 cargo 直接报错，resolver 选依赖版本、clippy 给建议时也按它取舍。
+# `just msrv` 和 CI 的 msrv job 负责验证它属实。
+rust-version = "1.94"
+license = "MIT"
+# 仓库地址，域名按 ci 选项推导（ci = none 时按 github 处理）。
+repository = "https://github.com/shiinazuki/chat"
+authors = ["shiinazuki <shiinazuki@gmail.com>"]
+
+[package]
+name = "chat"
+description = "RUST CHAT"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+# keywords = ["cli"]                        # crates.io 的搜索关键词，最多 5 个
+# categories = ["command-line-utilities"]   # 取值见 https://crates.io/categories
+# publish = false                           # 禁止发布到 crates.io
+
+# 打包发布时排除掉只对开发有意义的文件
+exclude = [
+  ".github/",
+  ".gitlab-ci.yml",
+  ".config/",
+  ".cargo/",
+  ".gitattributes",
+  ".githooks/",
+  "CLAUDE.md",
+  ".dockerignore",
+  "Dockerfile",
+  "cliff.toml",
+  "deny.toml",
+  "justfile",
+  "docker.just",
+  "bacon.toml",
+  "release.toml",
+  ".devcontainer/",
+  ".editorconfig",
+  ".taplo.toml",
+  ".typos.toml",
+  "rust-toolchain.toml",
+]
+
+# docs.rs 的文档构建参数，只有库项目需要
+
+# 全部字段见 https://doc.rust-lang.org/cargo/reference/manifest.html
+
+# ---------------------------------------------------------------------------
+# Feature 开关
+#
+# 取消下面几行的注释后，CI 的 hack job（cargo hack --feature-powerset）
+# 才会真正逐个组合地检查各 feature。
+# ---------------------------------------------------------------------------
+# [features]
+# default = []
+# # optional = true 的依赖会自动生成同名 feature；想改名用 dep: 前缀显式转发：
+# # serde = ["dep:serde", "dep:serde_json"]
+
+# ---------------------------------------------------------------------------
+# 依赖
+#
+# 版本只在下面的 [workspace.dependencies] 里写一次，[dependencies] / [dev-dependencies]
+# 以及将来拆出的子 crate 都只写 `foo = { workspace = true }` 继承它。
+#
+# 依赖登记进版本目录之后，`cargo add foo` 会自动写成继承形式，第二步不必手写。
+# 命令行别带版本号：`cargo add foo@1.2` 会退回具体版本，哪怕它和目录里的一模一样。
+# ---------------------------------------------------------------------------
+
+[workspace.dependencies]
+# 版本目录：成员引用后才真正生效
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+# rt-multi-thread 提供多线程运行时，macros 提供 #[tokio::main] / #[tokio::test]
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# env-filter 提供 RUST_LOG 那套运行时可调的过滤语法
+thiserror = "2"
+# thiserror 用来定义领域错误类型
+anyhow = "1"
+# anyhow 只给应用层用，见 src/main.rs
+
+[dependencies]
+# 本 crate 的运行时依赖写在这一段（到下一个 [ ] 表头为止）
+tokio = { workspace = true }
+# 入口是 #[tokio::main]，见 src/main.rs
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+# 初始化见 src/telemetry.rs
+thiserror = { workspace = true }
+# 领域错误类型见 src/error.rs
+anyhow = { workspace = true }
+# main 用它收口，配合 .context() 补充上下文
+
+[dev-dependencies]
+# 只在测试 / benchmark / example 里用到的依赖，不会进使用者的依赖树
+
+# `just unused`（cargo-machete）的误报放行名单
+# [package.metadata.cargo-machete]
+# ignored = ["some-crate"]
+
+# ---------------------------------------------------------------------------
+# 编译配置
+# ---------------------------------------------------------------------------
+
+# 依赖用 O2 编译，自身代码保持 O0
+[profile.dev.package."*"]
+opt-level = 2
+# 不生成依赖的调试符号，缩小 target/ 并加快链接
+debug = false
+
+[profile.release]
+opt-level = 3
+lto = "thin" # 改成 "fat" 体积更小，编译更慢
+codegen-units = 1
+strip = "symbols"
+panic = "unwind" # 改成 "abort" 二进制更小，但会禁用 unwind 并影响 #[should_panic] 测试
+
+# 性能分析（flamegraph / samply / instruments）用：cargo build --profile profiling
+# 优化级别与 release 一致，但保留符号
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = "none"
+
+# benchmark 按 release 的优化级别编译，并保留符号
+[profile.bench]
+inherits = "release"
+debug = true
+strip = "none"
+
+# 测试用 O1
+[profile.test]
+opt-level = 1
+
+# 按需打开的两项：
+#
+# [profile.dev.build-override]
+# build script 与 proc-macro 的编译配置，[profile.dev.package."*"] 管不到它们
+# opt-level = 1
+#
+# [profile.release]
+# release 下开启整数溢出检查（默认关闭，溢出会静默回绕）
+# overflow-checks = true
+
+# ---------------------------------------------------------------------------
+# 统一代码规范与 Clippy 约束
+#
+# 写在 [workspace.lints]，子 crate 用 `[lints] workspace = true` 继承同一套规则。
+# lint 组必须带 priority = -1，否则会覆盖后面单条 lint 的设置。
+# ---------------------------------------------------------------------------
+
+[workspace.lints.rust]
+unsafe_code = "forbid" # 禁止 unsafe（确实需要时改成 "deny"，再按处 expect 并写明理由）
+# 标识符里禁止非 ASCII 字符（拦同形字伪装，注释和字符串不受影响）
+non_ascii_idents = "deny"
+missing_debug_implementations = "warn"
+# 小而无内部可变性的类型应实现 Copy
+missing_copy_implementations = "warn"
+unreachable_pub = "warn" # 只在 crate 内部用的类型不要暴露成 pub
+unused_qualifications = "warn"
+# 类型本就相同的多余 cast
+trivial_numeric_casts = "warn"
+# 可以省掉的生命周期参数
+redundant_lifetimes = "warn"
+# 能取到值却写不出名字的类型（如 pub fn 返回未导出的类型）
+unnameable_types = "warn"
+# 把 () 绑定到变量，如 `let x = foo();` 而 foo() 返回 ()
+unit_bindings = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+# 未来版本里会变成硬错误的用法
+future_incompatible = { level = "warn", priority = -1 }
+# `let _ = mutex.lock()` 这类守卫当场被丢弃的写法
+let_underscore_drop = "warn"
+unused_lifetimes = "warn"
+# macro_rules! 里元变量的误用
+meta_variable_misuse = "warn"
+# `#[macro_use] extern crate foo` 这种把宏灌进 crate 根的写法
+macro_use_extern_crate = "warn"
+# 返回 async 块的闭包，应直接写成 async 闭包
+closure_returning_async_block = "warn"
+# 按需打开的两条：
+#   trivial_casts        靠自动 coercion 就能完成的 cast
+#   single_use_lifetimes 只用了一次的生命周期参数（已知会在 derive 展开处误报）
+# trivial_casts = "warn"
+# single_use_lifetimes = "warn"
+# 仅 nightly（需 #![feature(unqualified_local_imports)]）：本 crate 内部的 use
+# 一律写成 self:: / super:: / crate:: 开头，配合 rustfmt 的 group_imports。
+# unqualified_local_imports = "warn"
+# 强制公开 API 写文档注释，仅库项目打开
+missing_docs = "allow"
+# 配套上面的 [package.metadata.docs.rs]，同样只有库项目有
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# cargo 组检查 Cargo.toml 本身：通配符依赖、feature 命名、发布元数据
+cargo = { level = "warn", priority = -1 }
+
+# 手动加严：以下几条 clippy 默认不开
+enum_glob_use = "deny"
+unwrap_used = "warn" # 改用 ? 或 expect("说明为什么不会失败")
+dbg_macro = "warn" # 调试用的 dbg! 不要带进提交
+todo = "warn"
+mem_forget = "deny"
+# 统一模块布局：用 foo/mod.rs 而不是 foo.rs + foo/
+self_named_module_files = "warn"
+# 对 &str 调 .to_string()，应写 .to_owned()
+str_to_string = "warn"
+# 手写 File::open + read_to_string 读整个文件
+verbose_file_reads = "warn"
+# unimplemented!() 不应进主干
+unimplemented = "warn"
+# 压制 lint 时用 #[expect(...)] 而不是 #[allow(...)]，不再触发时会提示删除
+allow_attributes = "warn"
+
+# 降噪：pedantic 里在业务代码中收益不高的几条
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+# 降噪：cargo 组里两条在默认状态下必然误伤的
+#
+# 要求 keywords / categories 齐全，而模板里这两项默认注释着（见 [package]）
+cargo_common_metadata = "allow"
+# 同一个 crate 出现多个版本，改由 deny.toml 的 [bans] multiple-versions 管
+multiple_crate_versions = "allow"
+
+# 测试里的 unwrap / expect / panic 由 clippy.toml 的 allow-*-in-tests 统一放行。
+
+# 文档检查，本地 `cargo doc` 与编辑器里同样生效；CI 另有 RUSTDOCFLAGS="-D warnings"
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+# 没有 //! 头注释的 crate 在 docs.rs 上是一片空白
+missing_crate_level_docs = "warn"
+private_intra_doc_links = "warn"
+invalid_html_tags = "warn"
+bare_urls = "warn"
+
+# 根 crate 继承上面那套规则
+[lints]
+workspace = true

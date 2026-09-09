@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# 提交前的快速检查：格式化 / clippy / TOML / 拼写 / 私钥，只跑跟本次改动相关的项。
+# 测试与依赖审计在 pre-push（just ci）那一层。
+#
+# 检查的是工作区当前状态，不是暂存区快照。
+#
+# 安装：just hooks        临时跳过：git commit --no-verify
+set -euo pipefail
+
+# 模板仓库自身跑不了 cargo（Cargo.toml 里还是占位符），直接放行。
+# 本文件不做 liquid 变量替换，下面这个占位符必须原样保留。
+if grep -qF '{{ project-name }}' Cargo.toml 2>/dev/null; then
+    exit 0
+fi
+
+# 本次提交涉及哪些文件（A 新增 / C 复制 / M 修改 / R 改名，不含删除）
+changed=$(git diff --cached --name-only --diff-filter=ACMR)
+if [ -z "$changed" ]; then
+    exit 0
+fi
+
+touched() { printf '%s\n' "$changed" | grep -qE "$1"; }
+fail=0
+
+run() {
+    local label=$1
+    shift
+    printf '  → %s\n' "$label"
+    "$@" || fail=1
+}
+
+# --- 私钥 -------------------------------------------------------------------
+# 只看新增的行，不看文件类型
+if git diff --cached -U0 -- . \
+    | grep -qE '^\+.*-----BEGIN ([A-Z]+ )?PRIVATE KEY( BLOCK)?-----'; then
+    echo "✗ 暂存的改动里出现了私钥（-----BEGIN ... PRIVATE KEY-----）" >&2
+    echo "  密钥一旦进入 git 历史就删不干净，必须现在拦下。" >&2
+    fail=1
+fi
+
+# --- Rust 源码 --------------------------------------------------------------
+if touched '\.rs$'; then
+    # 规则同 justfile 的 fmt_toolchain
+    channel=$(grep -m1 '^channel' rust-toolchain.toml 2>/dev/null |
+        sed -E 's/.*"([^"]+)".*/\1/' || true)
+    case "$channel" in
+        nightly*) fmt_toolchain=$channel ;;
+        *) fmt_toolchain=nightly ;;
+    esac
+    run "cargo +$fmt_toolchain fmt --check" cargo "+$fmt_toolchain" fmt --all -- --check
+    run "cargo clippy" cargo clippy --all-targets --all-features -- -D warnings
+fi
+
+# --- TOML -------------------------------------------------------------------
+# RUST_LOG=warn 压掉 taplo 的 INFO 日志，ERROR 与退出码不受影响
+if touched '\.toml$' && command -v taplo >/dev/null 2>&1; then
+    run "taplo fmt --check" env RUST_LOG=warn taplo fmt --check
+fi
+
+# --- 依赖 -------------------------------------------------------------------
+# 只在依赖图可能变了的时候跑
+if touched '(Cargo\.(toml|lock)|deny\.toml)$'; then
+    run "cargo deny check" cargo deny check -A unmatched-bypass
+fi
+
+# --- 拼写 -------------------------------------------------------------------
+# typos 扫全仓只要几十毫秒，不按文件类型筛
+if command -v typos >/dev/null 2>&1; then
+    run "typos" typos
+fi
+
+if [ "$fail" -ne 0 ]; then
+    {
+        echo
+        echo "✗ 提交前检查未通过。"
+        echo "  多数格式问题可以直接修：just fmt / just fix"
+        echo "  确实要先存档：git commit --no-verify"
+        echo
+        echo "  这里刻意只跑快的那几项；测试与依赖审计在 pre-push（just ci）那一层。"
+    } >&2
+    exit 1
+fi
