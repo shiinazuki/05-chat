@@ -30,7 +30,7 @@ repository.workspace = true
 authors.workspace = true
 # keywords = ["cli"]                        # crates.io 的搜索关键词，最多 5 个
 # categories = ["command-line-utilities"]   # 取值见 https://crates.io/categories
-# publish = false                           # 禁止发布到 crates.io
+publish = false # 禁止发布到 crates.io
 
 # 打包发布时排除掉只对开发有意义的文件
 exclude = [
@@ -83,7 +83,7 @@ exclude = [
 
 [workspace.dependencies]
 # 版本目录：成员引用后才真正生效
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "fs"] }
 # rt-multi-thread 提供多线程运行时，macros 提供 #[tokio::main] / #[tokio::test]
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -92,6 +92,10 @@ thiserror = "2"
 # thiserror 用来定义领域错误类型
 anyhow = "1"
 # anyhow 只给应用层用，见 src/main.rs
+axum = { version = "0.8", features = ["http2"] }
+serde = { version = "1", features = ["derive"] }
+toml = "1"
+
 
 [dependencies]
 # 本 crate 的运行时依赖写在这一段（到下一个 [ ] 表头为止）
@@ -104,6 +108,9 @@ thiserror = { workspace = true }
 # 领域错误类型见 src/error.rs
 anyhow = { workspace = true }
 # main 用它收口，配合 .context() 补充上下文
+axum = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }
 
 [dev-dependencies]
 # 只在测试 / benchmark / example 里用到的依赖，不会进使用者的依赖树
