@@ -19,12 +19,32 @@ const ENV_CONFIG_PATH: &str = "CHAT_CONFIG";
 /// 覆盖 `server.port` 的环境变量
 const ENV_SERVER_PORT: &str = "CHAT_SERVER_PORT";
 
+/// 覆盖 `database.url` 的环境变量。生产环境靠它注入带密码的连接串
+const ENV_DATABASE_URL: &str = "CHAT_DATABASE_URL";
+
 /// 应用的全部配置。
-// TODO(阶段 2)：加上 `db_url: String` 之后本类型不再是 Copy，届时删掉 Copy derive。
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
     /// HTTP 服务相关配置
     pub server: ServerConfig,
+
+    /// 数据库相关配置
+    pub database: DatabaseConfig,
+}
+/// 数据库连接与连接池配置
+#[derive(Debug, Clone, Deserialize)]
+pub struct DatabaseConfig {
+    /// Postgres 连接串
+    pub url: String,
+
+    /// 连接池上限。超过这个数的请求会排队，而不是压垮数据库
+    pub max_connections: u32,
+
+    /// 从池里取连接的等待上限，超时就快速失败而不是无限挂着
+    pub acquire_timeout_secs: u64,
+
+    /// 空闲连接保留多久后回收
+    pub idle_timeout_secs: u64,
 }
 
 /// HTTP 服务配置。
@@ -62,8 +82,20 @@ impl AppConfig {
     /// # Examples
     ///
     /// ```
-    /// let config = chat::AppConfig::from_toml_str("[server]\nport = 6688\n")?;
+    /// let toml = r#"
+    /// [server]
+    /// port = 6688
+    ///
+    /// [database]
+    /// url = "postgres://localhost/chat"
+    /// max_connections = 10
+    /// acquire_timeout_secs = 3
+    /// idle_timeout_secs = 600
+    /// "#;
+    ///
+    /// let config = chat::AppConfig::from_toml_str(toml)?;
     /// assert_eq!(config.server.port, 6688);
+    /// assert_eq!(config.database.max_connections, 10);
     /// # Ok::<(), chat::Error>(())
     /// ```
     pub fn from_toml_str(text: &str) -> Result<Self> {
@@ -114,16 +146,24 @@ impl AppConfig {
     /// Rust 2024 起 `std::env::set_var` 是 `unsafe fn`，而本 workspace
     /// `unsafe_code = "forbid"`，测试里根本没法改环境变量。
     fn apply_overrides(&mut self, lookup: impl Fn(&str) -> Option<String>) -> Result<()> {
-        if let Some(raw) = lookup(ENV_SERVER_PORT) {
-            let raw = raw.trim();
-            if !raw.is_empty() {
-                self.server.port = raw.parse().map_err(|_| Error::InvalidEnvVar {
-                    name: ENV_SERVER_PORT,
-                    value: raw.to_owned(),
-                })?;
-            }
+        if let Some(raw) = Self::non_empty(&lookup, ENV_SERVER_PORT) {
+            self.server.port = raw.parse().map_err(|_| Error::InvalidEnvVar {
+                name: ENV_SERVER_PORT,
+                value: raw,
+            })?;
+        }
+
+        if let Some(url) = Self::non_empty(&lookup, ENV_DATABASE_URL) {
+            self.database.url = url;
         }
         Ok(())
+    }
+
+    /// 取环境变量的值并去掉首尾空白，空字符串按「未设置」处理
+    fn non_empty(lookup: &impl Fn(&str) -> Option<String>, name: &str) -> Option<String> {
+        lookup(name)
+            .map(|raw| raw.trim().to_owned())
+            .filter(|value| !value.is_empty())
     }
 }
 
@@ -132,8 +172,19 @@ mod tests {
     use super::{AppConfig, ENV_SERVER_PORT};
     use crate::Error;
 
+    const SAMPLE: &str = r#"
+    [server]
+    port = 6688
+
+    [database]
+    url = "postgres://localhost/chat_test"
+    max_connections = 5
+    acquire_timeout_secs = 3
+    idle_timeout_secs = 600
+    "#;
+
     fn base() -> AppConfig {
-        AppConfig::from_toml_str("[server]\nport = 6688\n").unwrap()
+        AppConfig::from_toml_str(SAMPLE).unwrap()
     }
 
     #[test]

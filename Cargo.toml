@@ -95,6 +95,13 @@ anyhow = "1"
 axum = { version = "0.8", features = ["http2"] }
 serde = { version = "1", features = ["derive"] }
 toml = "1"
+sqlx = { version = "0.9", default-features = false, features = [
+  "runtime-tokio",
+  "tls-rustls-ring-webpki",
+  "postgres",
+  "macros",
+  "migrate",
+] }
 
 
 [dependencies]
@@ -111,9 +118,11 @@ anyhow = { workspace = true }
 axum = { workspace = true }
 serde = { workspace = true }
 toml = { workspace = true }
+sqlx = { workspace = true }
 
 [dev-dependencies]
 # 只在测试 / benchmark / example 里用到的依赖，不会进使用者的依赖树
+sqlx = { workspace = true }
 
 # `just unused`（cargo-machete）的误报放行名单
 # [package.metadata.cargo-machete]

@@ -59,6 +59,14 @@ pub enum Error {
     /// HTTP 服务在运行期异常退出
     #[error("HTTP 服务异常退出")]
     Serve(#[source] std::io::Error),
+
+    /// 数据库操作失败。
+    #[error("数据库操作失败")]
+    Database(#[from] sqlx::Error),
+
+    /// 数据库操作失败。
+    #[error("数据库操作失败")]
+    Migrate(#[from] sqlx::migrate::MigrateError),
 }
 
 /// 带默认错误类型的 `Result` 别名，公开 API 统一写 `Result<T>`。

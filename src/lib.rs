@@ -4,15 +4,21 @@
 mod config;
 mod error;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
-use axum::{Router, routing::get};
-pub use config::{AppConfig, ServerConfig};
+use axum::{Router, extract::State, http::StatusCode, routing::get};
+pub use config::{AppConfig, DatabaseConfig, ServerConfig};
 pub use error::{Error, Result};
+use sqlx::{PgPool, postgres::PgPoolOptions};
 use tokio::net::TcpListener;
+use tracing::{error, info, warn};
 
 pub async fn serve_on() -> Result<()> {
     let config = AppConfig::load().await?;
+    let pool = connect_databaseee(&config.database).await?;
+    sqlx::migrate!().run(&pool).await?;
+    info!("数据库迁移已应用");
+
     let addr = format!("0.0.0.0:{}", config.server.port);
 
     let listener = TcpListener::bind(&addr)
@@ -21,35 +27,50 @@ pub async fn serve_on() -> Result<()> {
             addr: addr.clone(),
             source,
         })?;
-    tracing::info!(%addr,  "服务已启动");
+    info!(%addr,  "服务已启动");
 
-    let state = AppState::new(config);
+    let state = AppState::new(config, pool);
     axum::serve(listener, get_router(state))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .map_err(Error::Serve)?;
 
-    tracing::info!("服务已关闭");
+    info!("服务已关闭");
     Ok(())
 }
 
 /// 所有 handler 共享的应用状态。
-///
-/// axum 每处理一个请求就会 `clone` 一次 state，所以克隆代价必须足够低——
-/// 这里只克隆一个 `Arc`。
 #[derive(Debug, Clone)]
 pub struct AppState {
     /// 全局配置，启动后只读
     pub config: Arc<AppConfig>,
+    /// 数据库连接池。`PgPool` 内部已是 `Arc`，克隆很便宜。
+    pub pool: PgPool,
 }
 
 impl AppState {
-    /// 用加载好的配置构造状态
-    pub fn new(config: AppConfig) -> Self {
+    /// 用加载好的配置和已建立的连接池构造状态。
+    pub fn new(config: AppConfig, pool: PgPool) -> Self {
         Self {
             config: Arc::new(config),
+            pool,
         }
     }
+}
+
+/// 按配置建立数据库连接池。
+///
+/// 三个超时参数都显式设置：默认值在生产上不合适——取不到连接时无限等待，
+/// 会把上游的线程/任务全部堵死，故障从数据库扩散成全站不可用
+pub async fn connect_databaseee(config: &DatabaseConfig) -> Result<PgPool> {
+    let pool = PgPoolOptions::new()
+        .max_connections(config.max_connections)
+        .acquire_timeout(Duration::from_secs(config.acquire_timeout_secs))
+        .idle_timeout(Duration::from_secs(config.idle_timeout_secs))
+        .connect(&config.url)
+        .await?;
+
+    Ok(pool)
 }
 
 /// 组装路由表。
@@ -71,12 +92,20 @@ async fn healthz() -> &'static str {
     "ok"
 }
 
-/// 就绪探针：外部依赖可用时返回 200。
+/// 就绪探针：能和数据库完成一次往返才算就绪。
 ///
-/// 失败只会被负载均衡摘掉，不会重启，所以这里适合放依赖探测。
-/// 阶段 2 接上数据库后，这里要加 `pool.acquire()`
-async fn readyz() -> &'static str {
-    "ready"
+/// 失败只会被负载均衡摘掉、不会重启，所以依赖探测放在这里而不是 `/healthz`。
+async fn readyz(State(state): State<AppState>) -> Result<&'static str, StatusCode> {
+    match sqlx::query_scalar!(r#"SELECT 1 AS "ok!""#)
+        .fetch_one(&state.pool)
+        .await
+    {
+        Ok(_) => Ok("ready"),
+        Err(err) => {
+            warn!(%err, "就绪探测失败：数据库不可用");
+            Err(StatusCode::SERVICE_UNAVAILABLE)
+        }
+    }
 }
 
 /// 等待关闭信号：Ctrl-C，或 unix 上的 SIGTERM。
@@ -86,7 +115,7 @@ async fn readyz() -> &'static str {
 async fn shutdown_signal() {
     let ctrl_c = async {
         if let Err(err) = tokio::signal::ctrl_c().await {
-            tracing::error!(%err, "监听 Ctrl-C 失败");
+            error!(%err, "监听 Ctrl-C 失败");
         }
     };
 

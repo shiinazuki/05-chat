@@ -196,6 +196,10 @@ allow-globs = [".github/workflows/*.py", "c/test.py"]
 name = "curve25519-dalek"
 allow-globs = ["tests/build_tests.sh"]
 
+[[bans.build.bypass]]
+name = "ring"
+allow-globs = ["crypto/**/*.pl"]
+
 # 撞上别的误报时在这里逐个放行：
 # [[bans.build.bypass]]
 # name = "some-crate"

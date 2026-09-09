@@ -1,2 +1,8 @@
 [server]
 port = 6688
+
+[database]
+url = "postgres://shiina@localhost:5432/chat"
+max_connections = 10
+acquire_timeout_secs = 3
+idle_timeout_secs = 600
