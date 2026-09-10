@@ -22,6 +22,10 @@ const ENV_SERVER_PORT: &str = "CHAT_SERVER_PORT";
 /// 覆盖 `database.url` 的环境变量。生产环境靠它注入带密码的连接串
 const ENV_DATABASE_URL: &str = "CHAT_DATABASE_URL";
 
+/// 覆盖密钥路径的环境变量。生产环境把密钥挂载成文件，用这两个变量指过去
+const ENV_ENCODING_KEY_PATH: &str = "CHAT_AUTH_ENCODING_KEY_PATH";
+const ENV_DECODING_KEY_PATH: &str = "CHAT_AUTH_DECODING_KEY_PATH";
+
 /// 应用的全部配置。
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
@@ -30,7 +34,24 @@ pub struct AppConfig {
 
     /// 数据库相关配置
     pub database: DatabaseConfig,
+
+    /// 认证相关配置
+    pub auth: AuthConfig,
 }
+
+/// 认证配置
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthConfig {
+    /// Ed25519 私钥（PKCS#8 PEM）的路径
+    pub encoding_key_path: PathBuf,
+
+    /// Ed25519 公钥（SPKI PEM）的路径
+    pub decoding_key_path: PathBuf,
+
+    /// 签发的 token 有效期，单位秒
+    pub token_ttl_secs: u64,
+}
+
 /// 数据库连接与连接池配置
 #[derive(Debug, Clone, Deserialize)]
 pub struct DatabaseConfig {
@@ -91,6 +112,11 @@ impl AppConfig {
     /// max_connections = 10
     /// acquire_timeout_secs = 3
     /// idle_timeout_secs = 600
+    ///
+    /// [auth]
+    /// encoding_key_path = "fixtures/encoding.pem"
+    /// decoding_key_path = "fixtures/decoding.pem"
+    /// token_ttl_secs = 604800
     /// "#;
     ///
     /// let config = chat::AppConfig::from_toml_str(toml)?;
@@ -156,6 +182,14 @@ impl AppConfig {
         if let Some(url) = Self::non_empty(&lookup, ENV_DATABASE_URL) {
             self.database.url = url;
         }
+
+        if let Some(ek) = Self::non_empty(&lookup, ENV_ENCODING_KEY_PATH) {
+            self.auth.encoding_key_path = ek.into();
+        }
+
+        if let Some(dk) = Self::non_empty(&lookup, ENV_DECODING_KEY_PATH) {
+            self.auth.decoding_key_path = dk.into();
+        }
         Ok(())
     }
 
@@ -181,6 +215,11 @@ mod tests {
     max_connections = 5
     acquire_timeout_secs = 3
     idle_timeout_secs = 600
+
+    [auth]
+    encoding_key_path = "fixtures/encoding.pem"
+    decoding_key_path = "fixtures/decoding.pem"
+    token_ttl_secs = 604800
     "#;
 
     fn base() -> AppConfig {

@@ -6,3 +6,8 @@ url = "postgres://shiina@localhost:5432/chat"
 max_connections = 10
 acquire_timeout_secs = 3
 idle_timeout_secs = 600
+
+[auth]
+encoding_key_path = "fixtures/encoding.pem"
+decoding_key_path = "fixtures/decoding.pem"
+token_ttl_secs = 604800

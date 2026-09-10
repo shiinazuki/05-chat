@@ -14,6 +14,11 @@ url = "postgres://localhost/chat_test"
 max_connections = 5
 acquire_timeout_secs = 3
 idle_timeout_secs = 600
+
+[auth]
+encoding_key_path = "fixtures/encoding.pem"
+decoding_key_path = "fixtures/decoding.pem"
+token_ttl_secs = 604800
 "#;
 
 #[test]

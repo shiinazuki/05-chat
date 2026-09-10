@@ -2,6 +2,7 @@
 /dist
 **/*.rs.bk
 *.pdb
+/fixtures/*.pem
 
 # rustc 内部错误（ICE）的转储文件，落在当前工作目录而不是 target/ 下
 rustc-ice-*.txt

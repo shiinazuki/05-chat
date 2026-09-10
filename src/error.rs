@@ -67,6 +67,10 @@ pub enum Error {
     /// 数据库操作失败。
     #[error("数据库操作失败")]
     Migrate(#[from] sqlx::migrate::MigrateError),
+
+    /// JWT 签发或校验失败
+    #[error("JWT 处理失败")]
+    Jwt(#[from] crate::jwt::JwtError),
 }
 
 /// 带默认错误类型的 `Result` 别名，公开 API 统一写 `Result<T>`。

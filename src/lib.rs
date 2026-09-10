@@ -1,17 +1,23 @@
 //! RUST CHAT
 //!
 //! 库目标：存放业务逻辑，供 `src/main.rs` 与 `tests/` 调用。
-mod config;
-mod error;
 
-use std::{sync::Arc, time::Duration};
+use std::{ops::Deref, sync::Arc, time::Duration};
 
 use axum::{Router, extract::State, http::StatusCode, routing::get};
-pub use config::{AppConfig, DatabaseConfig, ServerConfig};
-pub use error::{Error, Result};
 use sqlx::{PgPool, postgres::PgPoolOptions};
-use tokio::net::TcpListener;
+use tokio::{fs, net::TcpListener};
 use tracing::{error, info, warn};
+
+mod config;
+mod error;
+mod jwt;
+
+pub use crate::{
+    config::{AppConfig, AuthConfig, DatabaseConfig, ServerConfig},
+    error::{Error, Result},
+    jwt::{DecodingKey, EncodingKey, JwtError},
+};
 
 pub async fn serve_on() -> Result<()> {
     let config = AppConfig::load().await?;
@@ -29,7 +35,23 @@ pub async fn serve_on() -> Result<()> {
         })?;
     info!(%addr,  "服务已启动");
 
-    let state = AppState::new(config, pool);
+    let encoding_pem = fs::read_to_string(&config.auth.encoding_key_path)
+        .await
+        .map_err(|source| Error::ConfigRead {
+            path: config.auth.encoding_key_path.clone(),
+            source,
+        })?;
+    let decoding_pem = fs::read_to_string(&config.auth.decoding_key_path)
+        .await
+        .map_err(|source| Error::ConfigRead {
+            path: config.auth.decoding_key_path.clone(),
+            source,
+        })?;
+    let encoding_key = EncodingKey::load_pem(&encoding_pem)?;
+    let decoding_key = DecodingKey::load_pem(&decoding_pem)?;
+
+    let state = AppState::new(config, pool, encoding_key, decoding_key);
+
     axum::serve(listener, get_router(state))
         .with_graceful_shutdown(shutdown_signal())
         .await
@@ -40,20 +62,50 @@ pub async fn serve_on() -> Result<()> {
 }
 
 /// 所有 handler 共享的应用状态。
+///
+/// 克隆只复制一个 `Arc`——axum 每个请求都会克隆一次 state
 #[derive(Debug, Clone)]
 pub struct AppState {
+    inner: Arc<AppStateInner>,
+}
+
+/// 状态的真身。
+///
+/// 必须是 `pub` 而不是 `pub(crate)`：下面给 `AppState` 实现了 `Deref` 指向它，
+/// 外部能拿到它的值却写不出类型名的话，`unnameable_types` 会报警
+#[derive(Debug)]
+pub struct AppStateInner {
     /// 全局配置，启动后只读
-    pub config: Arc<AppConfig>,
+    pub config: AppConfig,
     /// 数据库连接池。`PgPool` 内部已是 `Arc`，克隆很便宜。
     pub pool: PgPool,
+    pub encoding_key: EncodingKey,
+    pub decoding_key: DecodingKey,
+}
+
+impl Deref for AppState {
+    type Target = AppStateInner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 impl AppState {
     /// 用加载好的配置和已建立的连接池构造状态。
-    pub fn new(config: AppConfig, pool: PgPool) -> Self {
+    pub fn new(
+        config: AppConfig,
+        pool: PgPool,
+        encoding_key: EncodingKey,
+        decoding_key: DecodingKey,
+    ) -> Self {
         Self {
-            config: Arc::new(config),
-            pool,
+            inner: Arc::new(AppStateInner {
+                config,
+                pool,
+                encoding_key,
+                decoding_key,
+            }),
         }
     }
 }
