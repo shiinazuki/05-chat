@@ -108,6 +108,15 @@ base64ct = { version = "1", features = ["alloc"] }
 chrono = { version = "0.4", features = ["serde"] }
 ed25519-dalek = { version = "3.0.0", features = ["pkcs8", "pem"] }
 serde_json = "1"
+tower = "0.5"
+tower-http = { version = "0.7", features = [
+  "compression-full",
+  "cors",
+  "limit",
+  "request-id",
+  "timeout",
+  "trace",
+] }
 
 
 [dependencies]
@@ -130,6 +139,8 @@ base64ct = { workspace = true }
 chrono = { workspace = true }
 ed25519-dalek = { workspace = true }
 serde_json = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
 
 
 [dev-dependencies]

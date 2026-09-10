@@ -8,6 +8,9 @@ use chat::{AppConfig, Error};
 const SAMPLE: &str = r#"
 [server]
 port = 6688
+allowed_origins = ["http://localhost:5173"]
+request_timeout_secs = 30
+body_limit_bytes = 1048576
 
 [database]
 url = "postgres://localhost/chat_test"

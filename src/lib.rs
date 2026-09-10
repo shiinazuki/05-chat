@@ -18,6 +18,7 @@ mod config;
 mod error;
 mod handlers;
 mod jwt;
+mod middlewares;
 mod models;
 
 pub use crate::{
@@ -52,7 +53,7 @@ pub async fn serve_on() -> Result<()> {
     let decoding_key = DecodingKey::load_pem(&decoding_pem)?;
 
     let state = AppState::new(config, pool, encoding_key, decoding_key);
-    let app = get_router(state);
+    let app = get_router(state)?;
     let listener = TcpListener::bind(&addr)
         .await
         .map_err(|source| Error::Bind {
@@ -138,16 +139,26 @@ pub async fn connect_databaseee(config: &DatabaseConfig) -> Result<PgPool> {
 ///
 /// 只负责「路由 → handler」的映射，不做绑定端口、不启动服务——
 /// 那是 `main.rs` 的职责。这样测试可以只拿路由表，不需要真的听端口
-pub fn get_router(state: AppState) -> Router {
-    let api = Router::new()
+pub fn get_router(state: AppState) -> Result<Router> {
+    let server = state.config.server.clone();
+
+    // 受保护：先过认证中间件，User 已注入扩展
+    let protected = Router::new().route("/users/me", get(handlers::me)).layer(
+        axum::middleware::from_fn_with_state(state.clone(), middlewares::verify_token),
+    );
+
+    // 公开：注册与登录本身不能要求已登录
+    let public = Router::new()
         .route("/signup", post(handlers::signup))
         .route("/signin", post(handlers::signin));
 
-    Router::new()
+    let router = Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
-        .nest("/api", api)
-        .with_state(state)
+        .nest("/api", public.merge(protected))
+        .with_state(state);
+
+    middlewares::with_layers(router, &server)
 }
 
 /// 存活探针：进程还活着就返回 200。

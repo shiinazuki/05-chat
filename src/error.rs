@@ -87,6 +87,14 @@ pub enum Error {
     /// 阻塞任务 panic 或被取消
     #[error("阻塞任务执行失败")]
     BlockingTask(#[from] tokio::task::JoinError),
+
+    /// 未认证，或登录已过期。
+    #[error("未认证或登录已过期")]
+    Unauthenticated,
+
+    /// 配置里的跨域来源不是合法的 HTTP 头值。
+    #[error("跨域来源 {0} 不是合法的 HTTP 头值")]
+    InvalidOrigin(String),
 }
 
 /// 带默认错误类型的 `Result` 别名，公开 API 统一写 `Result<T>`。
@@ -105,7 +113,7 @@ impl axum::response::IntoResponse for Error {
 
         let status = match &self {
             Self::EmailTaken(_) => StatusCode::CONFLICT,
-            Self::InvalidCredentials => StatusCode::UNAUTHORIZED,
+            Self::InvalidCredentials | Self::Unauthenticated => StatusCode::UNAUTHORIZED,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
 

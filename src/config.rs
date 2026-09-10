@@ -26,6 +26,9 @@ const ENV_DATABASE_URL: &str = "CHAT_DATABASE_URL";
 const ENV_ENCODING_KEY_PATH: &str = "CHAT_AUTH_ENCODING_KEY_PATH";
 const ENV_DECODING_KEY_PATH: &str = "CHAT_AUTH_DECODING_KEY_PATH";
 
+///  覆盖 `server.allowed_origins` 的环境变量
+const ENV_ALLOWED_ORIGINS: &str = "CHAT_SERVER_ALLOWED_ORIGINS";
+
 /// 应用的全部配置。
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
@@ -76,11 +79,21 @@ pub struct DatabaseConfig {
     pub idle_timeout_secs: u64,
 }
 
-/// HTTP 服务配置。
-#[derive(Debug, Clone, Copy, Deserialize)]
+/// HTTP 服务配置
+// 含 Vec<String> 后不再满足 Copy，derive 里的 Copy 要去掉。
+#[derive(Debug, Clone, Deserialize)]
 pub struct ServerConfig {
     /// 监听端口
     pub port: u16,
+
+    /// 允许跨域访问的前端来源白名单。空列表表示不开放跨域
+    pub allowed_origins: Vec<String>,
+
+    /// 单个请求的处理超时，单位秒
+    pub request_timeout_secs: u64,
+
+    /// 请求体大小上限，单位字节
+    pub body_limit_bytes: usize,
 }
 
 impl AppConfig {
@@ -114,6 +127,9 @@ impl AppConfig {
     /// let toml = r#"
     /// [server]
     /// port = 6688
+    /// allowed_origins = ["http://localhost:5173"]
+    /// request_timeout_secs = 30
+    /// body_limit_bytes = 1048576
     ///
     /// [database]
     /// url = "postgres://localhost/chat"
@@ -198,6 +214,15 @@ impl AppConfig {
         if let Some(dk) = Self::non_empty(&lookup, ENV_DECODING_KEY_PATH) {
             self.auth.decoding_key_path = dk.into();
         }
+
+        if let Some(allow_origins) = Self::non_empty(&lookup, ENV_ALLOWED_ORIGINS) {
+            self.server.allowed_origins = allow_origins
+                .split(',')
+                .map(|origin| origin.trim().to_owned())
+                .filter(|origin| !origin.is_empty())
+                .collect();
+        }
+
         Ok(())
     }
 
@@ -217,6 +242,9 @@ mod tests {
     const SAMPLE: &str = r#"
     [server]
     port = 6688
+    allowed_origins = ["http://localhost:5173"]
+    request_timeout_secs = 30
+    body_limit_bytes = 1048576
 
     [database]
     url = "postgres://localhost/chat_test"

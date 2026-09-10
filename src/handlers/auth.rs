@@ -1,4 +1,4 @@
-use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
+use axum::{Extension, Json, extract::State, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -41,4 +41,9 @@ pub(crate) async fn signin(
         .sign(&user, state.config.auth.token_ttl())?;
 
     Ok((StatusCode::OK, Json(AuthOutput { token })))
+}
+
+/// 返回当前登录用户，用来验证认证链路是否打通
+pub(crate) async fn me(Extension(user): Extension<User>) -> impl IntoResponse {
+    Json(user)
 }
