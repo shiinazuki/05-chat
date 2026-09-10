@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n              SELECT id, ws_id, fullname, email, created_at, password_hash\n              FROM users\n              WHERE email = $1\n              ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "ws_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "ws_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "fullname",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "fullname"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "email",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "email"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "password_hash",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "password_hash"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "df4bc4d5ff7fd15e7b91b445358e2795bc4a11599b8aae87705588e3e88263d1"
+}

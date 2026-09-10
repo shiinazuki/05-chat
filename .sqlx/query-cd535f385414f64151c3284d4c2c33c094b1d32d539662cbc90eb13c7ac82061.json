@@ -1,0 +1,79 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO users (ws_id, fullname, email, password_hash)\n            VALUES ($1, $2, $3, $4)\n            RETURNING id, ws_id, fullname, email, created_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "ws_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "ws_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "fullname",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "fullname"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "email",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "email"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "cd535f385414f64151c3284d4c2c33c094b1d32d539662cbc90eb13c7ac82061"
+}

@@ -71,7 +71,54 @@ pub enum Error {
     /// JWT 签发或校验失败
     #[error("JWT 处理失败")]
     Jwt(#[from] crate::jwt::JwtError),
+
+    /// 邮箱已被注册
+    #[error("邮箱 {0} 已被注册")]
+    EmailTaken(String),
+
+    /// 邮箱或密码不正确
+    #[error("邮箱或密码不正确")]
+    InvalidCredentials,
+
+    /// 密码哈希或校验失败
+    #[error("密码哈希处理失败")]
+    PasswordHash(#[from] argon2::password_hash::Error),
+
+    /// 阻塞任务 panic 或被取消
+    #[error("阻塞任务执行失败")]
+    BlockingTask(#[from] tokio::task::JoinError),
 }
 
 /// 带默认错误类型的 `Result` 别名，公开 API 统一写 `Result<T>`。
 pub type Result<T, E = Error> = core::result::Result<T, E>;
+
+/// 返回给客户端的错误体
+#[derive(Debug, serde::Serialize)]
+pub struct ErrorOutput {
+    ///  人类可读的说明
+    pub error: String,
+}
+
+impl axum::response::IntoResponse for Error {
+    fn into_response(self) -> axum::response::Response {
+        use axum::{Json, http::StatusCode};
+
+        let status = match &self {
+            Self::EmailTaken(_) => StatusCode::CONFLICT,
+            Self::InvalidCredentials => StatusCode::UNAUTHORIZED,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+
+        // 5xx 是我们自己的问题：日志记全量，响应只给一句通用说明。
+        // 把内部细节（SQL 片段、文件路径、连接串）回给客户端，等于送情报
+        let message = if status.is_server_error() {
+            tracing::error!(error = ?self, "请求处理失败");
+            "服务内部错误".to_owned()
+        } else {
+            tracing::warn!(error = %self, "请求被拒绝");
+            self.to_string()
+        };
+
+        (status, Json(ErrorOutput { error: message })).into_response()
+    }
+}

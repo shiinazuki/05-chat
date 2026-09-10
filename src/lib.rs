@@ -4,19 +4,28 @@
 
 use std::{ops::Deref, sync::Arc, time::Duration};
 
-use axum::{Router, extract::State, http::StatusCode, routing::get};
+use axum::{
+    Router,
+    extract::State,
+    http::StatusCode,
+    routing::{get, post},
+};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use tokio::{fs, net::TcpListener};
 use tracing::{error, info, warn};
 
 mod config;
 mod error;
+mod handlers;
 mod jwt;
+mod models;
 
 pub use crate::{
     config::{AppConfig, AuthConfig, DatabaseConfig, ServerConfig},
-    error::{Error, Result},
+    error::{Error, ErrorOutput, Result},
+    handlers::AuthOutput,
     jwt::{DecodingKey, EncodingKey, JwtError},
+    models::{CreateUser, SigninUser, User},
 };
 
 pub async fn serve_on() -> Result<()> {
@@ -26,14 +35,6 @@ pub async fn serve_on() -> Result<()> {
     info!("数据库迁移已应用");
 
     let addr = format!("0.0.0.0:{}", config.server.port);
-
-    let listener = TcpListener::bind(&addr)
-        .await
-        .map_err(|source| Error::Bind {
-            addr: addr.clone(),
-            source,
-        })?;
-    info!(%addr,  "服务已启动");
 
     let encoding_pem = fs::read_to_string(&config.auth.encoding_key_path)
         .await
@@ -51,8 +52,16 @@ pub async fn serve_on() -> Result<()> {
     let decoding_key = DecodingKey::load_pem(&decoding_pem)?;
 
     let state = AppState::new(config, pool, encoding_key, decoding_key);
+    let app = get_router(state);
+    let listener = TcpListener::bind(&addr)
+        .await
+        .map_err(|source| Error::Bind {
+            addr: addr.clone(),
+            source,
+        })?;
+    info!(%addr,  "服务已启动");
 
-    axum::serve(listener, get_router(state))
+    axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
         .map_err(Error::Serve)?;
@@ -130,9 +139,14 @@ pub async fn connect_databaseee(config: &DatabaseConfig) -> Result<PgPool> {
 /// 只负责「路由 → handler」的映射，不做绑定端口、不启动服务——
 /// 那是 `main.rs` 的职责。这样测试可以只拿路由表，不需要真的听端口
 pub fn get_router(state: AppState) -> Router {
+    let api = Router::new()
+        .route("/signup", post(handlers::signup))
+        .route("/signin", post(handlers::signin));
+
     Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
+        .nest("/api", api)
         .with_state(state)
 }
 

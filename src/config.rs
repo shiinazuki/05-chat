@@ -52,6 +52,14 @@ pub struct AuthConfig {
     pub token_ttl_secs: u64,
 }
 
+impl AuthConfig {
+    /// 签发 token 时使用的有效期
+    #[must_use]
+    pub fn token_ttl(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.token_ttl_secs)
+    }
+}
+
 /// 数据库连接与连接池配置
 #[derive(Debug, Clone, Deserialize)]
 pub struct DatabaseConfig {
