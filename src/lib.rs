@@ -26,7 +26,7 @@ pub use crate::{
     error::{Error, ErrorOutput, Result},
     handlers::AuthOutput,
     jwt::{DecodingKey, EncodingKey, JwtError},
-    models::{CreateUser, SigninUser, User},
+    models::{Chat, ChatType, CreateChat, CreateUser, SigninUser, User},
 };
 
 pub async fn serve_on() -> Result<()> {
@@ -143,9 +143,16 @@ pub fn get_router(state: AppState) -> Result<Router> {
     let server = state.config.server.clone();
 
     // 受保护：先过认证中间件，User 已注入扩展
-    let protected = Router::new().route("/users/me", get(handlers::me)).layer(
-        axum::middleware::from_fn_with_state(state.clone(), middlewares::verify_token),
-    );
+    let protected = Router::new()
+        .route("/users/me", get(handlers::me))
+        .route(
+            "/chats",
+            get(handlers::list_chats).post(handlers::create_chat),
+        )
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            middlewares::verify_token,
+        ));
 
     // 公开：注册与登录本身不能要求已登录
     let public = Router::new()

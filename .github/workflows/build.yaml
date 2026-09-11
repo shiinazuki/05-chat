@@ -141,6 +141,11 @@ jobs:
     timeout-minutes: 30
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      # 编译期强制走 .sqlx 离线缓存。
+      # 只要 DATABASE_URL 存在，sqlx 的 query! 宏就会优先去连真库校验 SQL，
+      # 而 CI 上这个库从没跑过迁移 —— 于是报 relation "users" does not exist。
+      # 运行时不受影响：#[sqlx::test] 读的是 DATABASE_URL，与本项无关。
+      SQLX_OFFLINE: "true"
     services:
       postgres:
         image: postgres:18

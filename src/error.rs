@@ -95,6 +95,10 @@ pub enum Error {
     /// 配置里的跨域来源不是合法的 HTTP 头值。
     #[error("跨域来源 {0} 不是合法的 HTTP 头值")]
     InvalidOrigin(String),
+
+    #[error("{0}")]
+    /// 请求内容不满足业务规则。
+    Validation(String),
 }
 
 /// 带默认错误类型的 `Result` 别名，公开 API 统一写 `Result<T>`。
@@ -114,6 +118,7 @@ impl axum::response::IntoResponse for Error {
         let status = match &self {
             Self::EmailTaken(_) => StatusCode::CONFLICT,
             Self::InvalidCredentials | Self::Unauthenticated => StatusCode::UNAUTHORIZED,
+            Self::Validation(_) => StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
