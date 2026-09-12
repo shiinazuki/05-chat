@@ -6,6 +6,27 @@ use sqlx::PgPool;
 
 use crate::{Error, Result};
 
+/// 会话列表的排序字段。
+///
+/// 这是个**封闭集合**：客户端只能从中挑选，真正拼进 SQL 的字符串永远由
+/// 我们提供，客户端的输入从头到尾没机会进入 SQL 文本。
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChatSort {
+    #[default]
+    CreatedAt,
+    Name,
+}
+
+/// 排序方向
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SortOrder {
+    #[default]
+    Desc,
+    Asc,
+}
+
 /// 对应 Postgres 的 `chat_type` 枚举。
 ///
 /// `type_name` 必须与迁移里 `CREATE TYPE` 的名字逐字一致；`rename_all` 负责把
@@ -135,20 +156,38 @@ impl Chat {
     /// # Errors
     ///
     /// 数据库查询失败时返回 [`Error::Database`]
-    pub async fn list_for_user(user_id: i64, ws_id: i64, pool: &PgPool) -> Result<Vec<Self>> {
-        sqlx::query_as!(
-            Self,
-            r#"
+    pub async fn list_for_user(
+        user_id: i64,
+        ws_id: i64,
+        sort: ChatSort,
+        order: SortOrder,
+        pool: &PgPool,
+    ) -> Result<Vec<Self>> {
+        // sqlx 的 query_as! 支持用 + 拼接字面量，所以每个分支依然是
+        // 编译期校验过的静态 SQL——既杜绝注入，又不丢失类型检查
+        macro_rules! list {
+            ($tail:literal) => {
+                sqlx::query_as!(
+                    Self,
+                    r#"
                SELECT id, ws_id, name, type AS "type: ChatType", members, created_at
                FROM chats
                WHERE ws_id = $1 AND members @> ARRAY[$2]::bigint[]
-               ORDER BY created_at DESC
-               "#,
-            ws_id,
-            user_id,
-        )
-        .fetch_all(pool)
-        .await
+               ORDER BY "#
+                        + $tail,
+                    ws_id,
+                    user_id,
+                )
+                .fetch_all(pool)
+                .await
+            };
+        }
+        match (sort, order) {
+            (ChatSort::CreatedAt, SortOrder::Desc) => list!("created_at DESC"),
+            (ChatSort::CreatedAt, SortOrder::Asc) => list!("created_at ASC"),
+            (ChatSort::Name, SortOrder::Desc) => list!("name DESC NULLS LAST"),
+            (ChatSort::Name, SortOrder::Asc) => list!("name ASC NULLS LAST"),
+        }
         .map_err(Error::Database)
     }
 
@@ -183,7 +222,7 @@ impl Chat {
 mod tests {
     use sqlx::PgPool;
 
-    use super::{Chat, ChatType, CreateChat};
+    use super::{Chat, ChatSort, ChatType, CreateChat, SortOrder};
     use crate::{
         Error,
         models::{CreateUser, User},
@@ -254,11 +293,15 @@ mod tests {
         Chat::create(&input(None, &ids[..2], false), 0, ids[0], &pool)
             .await
             .unwrap();
-
-        let mine = Chat::list_for_user(ids[0], 0, &pool).await.unwrap();
+        let mine = Chat::list_for_user(ids[0], 0, ChatSort::default(), SortOrder::default(), &pool)
+            .await
+            .unwrap();
         assert_eq!(mine.len(), 1);
 
-        let others = Chat::list_for_user(ids[2], 0, &pool).await.unwrap();
+        let others =
+            Chat::list_for_user(ids[2], 0, ChatSort::default(), SortOrder::default(), &pool)
+                .await
+                .unwrap();
         assert!(others.is_empty(), "不该看到自己没参与的会话");
     }
 }

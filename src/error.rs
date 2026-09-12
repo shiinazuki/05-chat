@@ -99,6 +99,10 @@ pub enum Error {
     #[error("{0}")]
     /// 请求内容不满足业务规则。
     Validation(String),
+
+    /// 会话不存在，或当前用户无权访问。两者刻意不区分。
+    #[error("会话不存在")]
+    ChatNotFound,
 }
 
 /// 带默认错误类型的 `Result` 别名，公开 API 统一写 `Result<T>`。
@@ -119,6 +123,7 @@ impl axum::response::IntoResponse for Error {
             Self::EmailTaken(_) => StatusCode::CONFLICT,
             Self::InvalidCredentials | Self::Unauthenticated => StatusCode::UNAUTHORIZED,
             Self::Validation(_) => StatusCode::BAD_REQUEST,
+            Self::ChatNotFound => StatusCode::NOT_FOUND,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
 

@@ -1,16 +1,33 @@
-use axum::{Extension, Json, extract::State, http::StatusCode, response::IntoResponse};
+use axum::{
+    Extension, Json,
+    extract::{Query, State},
+    http::StatusCode,
+    response::IntoResponse,
+};
+use serde::Deserialize;
 
 use crate::{
-    AppState, Result, User,
+    AppState, ChatSort, Result, SortOrder, User,
     models::{Chat, CreateChat},
 };
+
+/// 会话列表的查询参数
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+pub(crate) struct ListChatsQuery {
+    #[serde(default)]
+    pub sort: ChatSort,
+    #[serde(default)]
+    pub order: SortOrder,
+}
 
 /// 列出当前用户参与的会话
 pub(crate) async fn list_chats(
     Extension(user): Extension<User>,
     State(state): State<AppState>,
+    Query(params): Query<ListChatsQuery>,
 ) -> Result<impl IntoResponse> {
-    let chats = Chat::list_for_user(user.id, user.ws_id, &state.pool).await?;
+    let chats =
+        Chat::list_for_user(user.id, user.ws_id, params.sort, params.order, &state.pool).await?;
     Ok(Json(chats))
 }
 

@@ -1,0 +1,101 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n               SELECT id, ws_id, name, type AS \"type: ChatType\", members, created_at\n               FROM chats\n               WHERE ws_id = $1 AND members @> ARRAY[$2]::bigint[]\n               ORDER BY created_at ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "chats",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "ws_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "chats",
+            "name": "ws_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "chats",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "type: ChatType",
+        "type_info": {
+          "Custom": {
+            "name": "chat_type",
+            "kind": {
+              "Enum": [
+                "single",
+                "group",
+                "private_channel",
+                "public_channel"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "chats",
+            "name": "type"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "members",
+        "type_info": "Int8Array",
+        "origin": {
+          "Table": {
+            "table": "chats",
+            "name": "members"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "chats",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "abc0ad3c3b7a4d0df26ee0e24d93ec8e75b718f610d225c613b5469971df12fe"
+}

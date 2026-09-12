@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n               SELECT id, ws_id, name, type AS \"type: ChatType\", members, created_at\n               FROM chats\n               WHERE ws_id = $1 AND members @> ARRAY[$2]::bigint[]\n               ORDER BY created_at DESC\n               ",
+  "query": "\n               SELECT id, ws_id, name, type AS \"type: ChatType\", members, created_at\n               FROM chats\n               WHERE ws_id = $1 AND members @> ARRAY[$2]::bigint[]\n               ORDER BY name DESC NULLS LAST",
   "describe": {
     "columns": [
       {
@@ -97,5 +97,5 @@
       false
     ]
   },
-  "hash": "ea33be4d96438f661914840626e2251a08a3a0b2b8dcc3cc1e88ecc631cf3afc"
+  "hash": "4373f60342b18567d724fd10f94c704188a87c9a805d7a9c3daae845a17edda3"
 }

@@ -26,12 +26,15 @@ pub use crate::{
     error::{Error, ErrorOutput, Result},
     handlers::AuthOutput,
     jwt::{DecodingKey, EncodingKey, JwtError},
-    models::{Chat, ChatType, CreateChat, CreateUser, SigninUser, User},
+    models::{
+        Chat, ChatSort, ChatType, CreateChat, CreateMessage, CreateUser, ListMessages, Message,
+        SigninUser, SortOrder, User, ensure_member,
+    },
 };
 
 pub async fn serve_on() -> Result<()> {
     let config = AppConfig::load().await?;
-    let pool = connect_databaseee(&config.database).await?;
+    let pool = connect_database(&config.database).await?;
     sqlx::migrate!().run(&pool).await?;
     info!("数据库迁移已应用");
 
@@ -124,7 +127,7 @@ impl AppState {
 ///
 /// 三个超时参数都显式设置：默认值在生产上不合适——取不到连接时无限等待，
 /// 会把上游的线程/任务全部堵死，故障从数据库扩散成全站不可用
-pub async fn connect_databaseee(config: &DatabaseConfig) -> Result<PgPool> {
+pub async fn connect_database(config: &DatabaseConfig) -> Result<PgPool> {
     let pool = PgPoolOptions::new()
         .max_connections(config.max_connections)
         .acquire_timeout(Duration::from_secs(config.acquire_timeout_secs))
@@ -148,6 +151,10 @@ pub fn get_router(state: AppState) -> Result<Router> {
         .route(
             "/chats",
             get(handlers::list_chats).post(handlers::create_chat),
+        )
+        .route(
+            "/chats/{id}/messages",
+            get(handlers::list_messages).post(handlers::send_message),
         )
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
