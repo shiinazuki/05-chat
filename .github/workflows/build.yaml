@@ -104,7 +104,7 @@ jobs:
           esac
           echo "FMT_TOOLCHAIN=$fmt" >> "$GITHUB_ENV"
       - name: Install cargo tools
-        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+        uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
         with:
           tool: typos,taplo-cli
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -166,7 +166,7 @@ jobs:
       - name: Install Rust (版本由 rust-toolchain.toml 固定)
         run: rustup show active-toolchain || rustup toolchain install
       - name: Install cargo tools
-        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+        uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
         with:
           tool: cargo-nextest,cargo-llvm-cov
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -219,7 +219,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install cargo-deny
-        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+        uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
         with:
           tool: cargo-deny
       - name: Check dependencies (advisories / licenses / bans / sources)
@@ -237,7 +237,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install zizmor
-        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+        uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
         with:
           tool: zizmor
       # actionlint 不在 install-action 的支持列表里（Go 写的，crates.io 上没有同名包），
@@ -342,7 +342,7 @@ jobs:
       - name: Install Rust (版本由 rust-toolchain.toml 固定)
         run: rustup show active-toolchain || rustup toolchain install
       - name: Install cargo-hack
-        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+        uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
         with:
           tool: cargo-hack
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -380,7 +380,7 @@ jobs:
           fi
       - name: Install cargo-semver-checks
         if: steps.baseline.outputs.rev != ''
-        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+        uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
         with:
           tool: cargo-semver-checks
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
