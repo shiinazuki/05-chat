@@ -56,7 +56,7 @@ jobs:
           esac
           echo "FMT_TOOLCHAIN=$fmt" >> "$GITHUB_ENV"
       - name: Install cargo tools
-        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+        uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
         with:
           tool: cargo-nextest,cargo-deny,typos,taplo-cli
       # 与 build.yaml 的 lint job 同一套检查，发版这条路径上不能比日常 CI 松
